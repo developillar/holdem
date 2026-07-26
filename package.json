@@ -1,0 +1,27 @@
+{
+  "name": "royale-holdem",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "AAA mobile-first 3D poker — NLHE, PLO4, SNG, bomb pots, GTO trainer, live multiplayer",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc --noEmit && vite build",
+    "preview": "vite preview --port 4173 --host",
+    "typecheck": "tsc --noEmit",
+    "server": "node --experimental-strip-types server/index.ts",
+    "test": "node --test --experimental-strip-types tests/*.test.ts",
+    "qa": "node tools/visual-qa.mjs"
+  },
+  "dependencies": {
+    "three": "^0.185.1",
+    "ws": "^8.18.0"
+  },
+  "devDependencies": {
+    "@types/three": "^0.185.0",
+    "@types/ws": "^8.5.13",
+    "playwright": "^1.49.0",
+    "typescript": "^5.7.2",
+    "vite": "^6.0.5"
+  }
+}

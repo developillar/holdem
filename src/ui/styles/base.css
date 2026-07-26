@@ -1,0 +1,177 @@
+/* Reset + app shell. Portrait-first, safe-area aware, OLED-friendly. */
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+  height: 100%;
+  overscroll-behavior: none;
+  background: var(--c-void);
+  color: var(--c-slate-100);
+  font: var(--t-body);
+  letter-spacing: var(--ls-tight);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+  -webkit-tap-highlight-color: transparent;
+  -webkit-text-size-adjust: 100%;
+  touch-action: manipulation;
+}
+
+body {
+  position: fixed;
+  inset: 0;
+  overflow: hidden;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+#app {
+  position: absolute;
+  inset: 0;
+  background: var(--s-bg);
+  isolation: isolate;
+}
+
+#stage {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  display: block;
+  z-index: var(--z-stage);
+  touch-action: none;
+}
+
+#ui-root {
+  position: absolute;
+  inset: 0;
+  z-index: var(--z-hud);
+  display: flex;
+  flex-direction: column;
+  pointer-events: none;
+}
+
+#ui-root > * {
+  pointer-events: auto;
+}
+
+#fx-root {
+  position: absolute;
+  inset: 0;
+  z-index: var(--z-fx);
+  pointer-events: none;
+  overflow: hidden;
+}
+
+button {
+  font: inherit;
+  color: inherit;
+  border: 0;
+  background: none;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+input,
+textarea {
+  font: inherit;
+  color: inherit;
+}
+
+::-webkit-scrollbar {
+  width: 0;
+  height: 0;
+}
+
+.scroll {
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior: contain;
+  scrollbar-width: none;
+}
+
+/* Numeric readouts must never reflow while counting up. */
+.tnum {
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: 'tnum' 1, 'ss01' 1;
+}
+
+.caps {
+  text-transform: uppercase;
+  letter-spacing: var(--ls-caps);
+  font: var(--t-micro);
+}
+
+.gold-text {
+  background: var(--grad-gold);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+/* ── Boot curtain ─────────────────────────────────────────── */
+#boot {
+  position: fixed;
+  inset: 0;
+  z-index: 200;
+  display: grid;
+  place-content: center;
+  justify-items: center;
+  gap: var(--sp-5);
+  background: radial-gradient(90% 60% at 50% 40%, #121a2c 0%, var(--c-void) 70%);
+  transition: opacity var(--d-lux) var(--ease-out), visibility var(--d-lux);
+}
+
+#boot.is-done {
+  opacity: 0;
+  visibility: hidden;
+}
+
+.boot__mark {
+  filter: drop-shadow(0 6px 26px rgba(217, 169, 58, 0.42));
+  animation: bootPulse 2.4s var(--ease-in-out) infinite;
+}
+
+@keyframes bootPulse {
+  0%,
+  100% {
+    transform: translateY(0) scale(1);
+    opacity: 0.94;
+  }
+  50% {
+    transform: translateY(-5px) scale(1.035);
+    opacity: 1;
+  }
+}
+
+.boot__bar {
+  width: 168px;
+  height: 3px;
+  border-radius: var(--r-pill);
+  background: rgba(255, 255, 255, 0.09);
+  overflow: hidden;
+}
+
+.boot__bar i {
+  display: block;
+  height: 100%;
+  width: 12%;
+  border-radius: inherit;
+  background: var(--grad-gold);
+  box-shadow: 0 0 12px rgba(237, 201, 107, 0.6);
+  transition: width var(--d-base) var(--ease-out);
+}
+
+.boot__label {
+  font: var(--t-micro);
+  text-transform: uppercase;
+  letter-spacing: var(--ls-caps);
+  color: var(--c-slate-400);
+}

@@ -1,0 +1,179 @@
+/**
+ * ROYALE DESIGN TOKENS
+ * ─────────────────────────────────────────────────────────────
+ * One visual system. Every surface in the app derives from these.
+ * Direction: obsidian glass + warm 24k gold + deep emerald felt.
+ * Reference bar: Apple Wallet's material depth, Balatro's tactile
+ * punch, a high-roller room's restraint. Nothing neon, nothing flat.
+ */
+
+:root {
+  /* ── Base neutrals: cool obsidian, never pure black (keeps OLED depth) */
+  --c-void: #05060a;
+  --c-abyss: #07090f;
+  --c-ink: #0b0e16;
+  --c-slate-900: #11151f;
+  --c-slate-800: #171c28;
+  --c-slate-700: #1e2433;
+  --c-slate-600: #2a3143;
+  --c-slate-500: #3b4356;
+  --c-slate-400: #5b6478;
+  --c-slate-300: #8891a5;
+  --c-slate-200: #b7bfd0;
+  --c-slate-100: #dfe4ee;
+  --c-white: #f7f9fd;
+
+  /* ── Gold: the single hero accent. Three stops for real metal gradients. */
+  --c-gold-100: #fdf3d0;
+  --c-gold-200: #f6e0a0;
+  --c-gold-300: #edc96b;
+  --c-gold-400: #d9a93a;
+  --c-gold-500: #c08d21;
+  --c-gold-600: #94690f;
+  --c-gold-700: #63460a;
+  --grad-gold: linear-gradient(
+    145deg,
+    var(--c-gold-100) 0%,
+    var(--c-gold-300) 22%,
+    var(--c-gold-500) 52%,
+    var(--c-gold-300) 74%,
+    var(--c-gold-100) 100%
+  );
+  --grad-gold-soft: linear-gradient(160deg, var(--c-gold-200), var(--c-gold-500));
+
+  /* ── Felt: the table green, and its cool counterpart for skins */
+  --c-felt-900: #06180f;
+  --c-felt-800: #0a2418;
+  --c-felt-700: #0e3222;
+  --c-felt-600: #14432d;
+  --c-felt-500: #1c5a3c;
+
+  /* ── Semantic */
+  --c-good: #34d399;
+  --c-good-dim: #0f5b41;
+  --c-bad: #f6534f;
+  --c-bad-dim: #6a1c1c;
+  --c-warn: #fbbf24;
+  --c-info: #60a5fa;
+  --c-epic: #a78bfa;
+  --c-mythic: #f472b6;
+
+  /* ── Rarity ramp (store, pass, drops) */
+  --c-rar-common: #8891a5;
+  --c-rar-rare: #47a9ff;
+  --c-rar-epic: #a855f7;
+  --c-rar-legendary: #f5a524;
+  --c-rar-mythic: #ff4d8d;
+
+  /* ── Suits: red/black is illegible at phone size. Four-color deck,
+        tuned for contrast on both white and dark card faces. */
+  --c-suit-c: #22a06b;
+  --c-suit-d: #3d8bfd;
+  --c-suit-h: #e5484d;
+  --c-suit-s: #1c2333;
+
+  /* ── Surfaces & glass */
+  --s-bg: radial-gradient(120% 80% at 50% -10%, #131a2b 0%, var(--c-abyss) 55%, var(--c-void) 100%);
+  --s-card: linear-gradient(180deg, rgba(35, 43, 61, 0.86), rgba(17, 21, 31, 0.92));
+  --s-card-hi: linear-gradient(180deg, rgba(48, 58, 80, 0.9), rgba(23, 28, 40, 0.95));
+  --s-glass: rgba(20, 25, 37, 0.62);
+  --s-glass-hi: rgba(34, 42, 60, 0.72);
+  --s-sunken: linear-gradient(180deg, rgba(5, 6, 10, 0.66), rgba(11, 14, 22, 0.44));
+  --blur-glass: saturate(160%) blur(22px);
+  --blur-scrim: saturate(120%) blur(38px);
+
+  /* ── Hairlines: the detail that separates AAA from template. */
+  --line-1: rgba(255, 255, 255, 0.07);
+  --line-2: rgba(255, 255, 255, 0.12);
+  --line-3: rgba(255, 255, 255, 0.2);
+  --line-gold: rgba(237, 201, 107, 0.34);
+  --inset-hi: inset 0 1px 0 rgba(255, 255, 255, 0.09);
+  --inset-lo: inset 0 -1px 0 rgba(0, 0, 0, 0.45);
+
+  /* ── Elevation: layered, colored shadows (never flat black) */
+  --e-1: 0 1px 2px rgba(3, 5, 10, 0.5), 0 2px 6px rgba(3, 5, 10, 0.35);
+  --e-2: 0 2px 5px rgba(3, 5, 10, 0.5), 0 8px 20px rgba(3, 5, 10, 0.42);
+  --e-3: 0 4px 10px rgba(3, 5, 10, 0.52), 0 18px 44px rgba(3, 5, 10, 0.5);
+  --e-4: 0 8px 20px rgba(3, 5, 10, 0.55), 0 34px 80px rgba(3, 5, 10, 0.6);
+  --e-gold: 0 2px 10px rgba(217, 169, 58, 0.28), 0 10px 34px rgba(217, 169, 58, 0.18);
+  --e-good: 0 2px 12px rgba(52, 211, 153, 0.3), 0 12px 34px rgba(52, 211, 153, 0.16);
+
+  /* ── Radii: phone-scale, generous but not bubbly */
+  --r-xs: 6px;
+  --r-sm: 10px;
+  --r-md: 14px;
+  --r-lg: 20px;
+  --r-xl: 28px;
+  --r-2xl: 36px;
+  --r-pill: 999px;
+
+  /* ── Space: 4pt grid */
+  --sp-1: 4px;
+  --sp-2: 8px;
+  --sp-3: 12px;
+  --sp-4: 16px;
+  --sp-5: 20px;
+  --sp-6: 24px;
+  --sp-7: 32px;
+  --sp-8: 40px;
+  --sp-9: 56px;
+  --sp-10: 72px;
+
+  /* ── Type. System stack — renders native-crisp on iOS, no webfont cost. */
+  --f-ui: -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Segoe UI', Inter, Roboto,
+    'Helvetica Neue', sans-serif;
+  --f-num: 'SF Pro Display', -apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, sans-serif;
+  --f-mono: ui-monospace, 'SF Mono', 'JetBrains Mono', Menlo, monospace;
+
+  --t-display: 700 34px/1.06 var(--f-ui);
+  --t-h1: 700 27px/1.14 var(--f-ui);
+  --t-h2: 650 21px/1.2 var(--f-ui);
+  --t-h3: 650 17px/1.26 var(--f-ui);
+  --t-body: 450 15px/1.45 var(--f-ui);
+  --t-body-sm: 450 13.5px/1.42 var(--f-ui);
+  --t-label: 600 12.5px/1.24 var(--f-ui);
+  --t-micro: 650 10.5px/1.2 var(--f-ui);
+  --ls-caps: 0.09em;
+  --ls-tight: -0.018em;
+
+  /* ── Motion. Springs, not linears. Durations tuned for 120Hz phones. */
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-in-out: cubic-bezier(0.65, 0, 0.35, 1);
+  --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
+  --ease-snap: cubic-bezier(0.2, 0.9, 0.15, 1);
+  --d-instant: 90ms;
+  --d-fast: 160ms;
+  --d-base: 240ms;
+  --d-slow: 380ms;
+  --d-lux: 620ms;
+
+  /* ── Layout: portrait-first. Safe areas respected everywhere. */
+  --safe-t: env(safe-area-inset-top, 0px);
+  --safe-b: env(safe-area-inset-bottom, 0px);
+  --safe-l: env(safe-area-inset-left, 0px);
+  --safe-r: env(safe-area-inset-right, 0px);
+  --tabbar-h: 58px;
+  --topbar-h: 52px;
+  --gutter: 16px;
+  --hit: 44px; /* minimum touch target, Apple HIG */
+
+  /* ── Z layers */
+  --z-stage: 0;
+  --z-table-ui: 10;
+  --z-hud: 20;
+  --z-sheet: 40;
+  --z-modal: 50;
+  --z-toast: 60;
+  --z-fx: 70;
+}
+
+/* Respect the user; never trap them in animation. */
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --d-instant: 1ms;
+    --d-fast: 1ms;
+    --d-base: 1ms;
+    --d-slow: 1ms;
+    --d-lux: 1ms;
+  }
+}

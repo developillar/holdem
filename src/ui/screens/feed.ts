@@ -172,7 +172,13 @@ export function mount(container: HTMLElement): FeedScreen {
     h('span', { class: 'feed__pillt' }, ''),
   ) as HTMLButtonElement;
 
-  const root = h('div', { class: 'feed' }, header, scroller, pill);
+  // The tab bar is translucent, so without this the next card's gold money
+  // chip and its HOLE/BOARD captions read straight through the Play/Feed/Store
+  // labels. The hem fades the list out over the 44px above the bar and holds a
+  // near-opaque floor behind it — no seam, nothing legible underneath.
+  const hem = h('div', { class: 'feed__hem', 'aria-hidden': 'true' });
+
+  const root = h('div', { class: 'feed' }, header, scroller, hem, pill);
   container.appendChild(root);
 
   // The pill floats just under the chrome; the header's height changes with

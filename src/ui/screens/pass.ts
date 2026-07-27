@@ -6,14 +6,19 @@
  *
  *   season header      name, tagline, and a countdown that is a real deadline
  *   tier card          the current tier, the xp bar to the next one, claim-all
- *   upsell             only when you do not have it, and it states the numbers
  *   track              free lane on top, premium lane below, marker between
+ *   upsell             only when you do not have it, and it states the numbers
  *   challenges         daily and weekly, with progress rings and one-tap claim
+ *
+ * Order matters: the reward track sits ABOVE the upsell so the first screenful
+ * is the art you are playing for, not a pricing panel. A pass screen that opens
+ * on a paywall is a store; one that opens on the rewards is a pass.
  *
  * The upsell is deliberately not predatory: it itemises exactly what the
  * premium lane contains rather than quoting an invented "value", says plainly
  * that upgrading back-pays every tier already passed, and never blocks the
- * free lane behind a modal.
+ * free lane behind a modal. It states each fact exactly once — the tally owns
+ * the quantities, the two ticks own the terms, the footer owns the legal line.
  */
 import '../styles/store.css';
 import { bus } from '../../core/bus.ts';
@@ -81,6 +86,59 @@ export function mount(container: HTMLElement): PassInstance {
 
   let snap: PassSnapshot = passState();
 
+  // ── count-up ───────────────────────────────────────────────────────
+  /**
+   * Every numeral on this screen already carries `.tnum`, so the advance width
+   * is locked and a rolling number cannot reflow. That infrastructure was built
+   * and unused: the arrival of the numbers is now the reward moment, in place
+   * of the idle pulses that used to run whether or not anyone was looking.
+   *
+   * Each ramp starts behind its own section's 38ms `ecIn` stagger so the digits
+   * settle just after the card they live in has landed.
+   */
+  const timers = new Set<number>();
+  const frames = new Set<number>();
+
+  function rampTo(from: number, to: number, delayMs: number, render: (v: number) => void): void {
+    if (reduceMotion() || from === to) {
+      render(to);
+      return;
+    }
+    render(from);
+    const begin = (): void => {
+      const t0 = performance.now();
+      let handle = 0;
+      const tick = (now: number): void => {
+        frames.delete(handle);
+        const t = Math.min(1, (now - t0) / 600);
+        // the tail of --ease-out: fast out of the gate, glides into the value
+        render(from + (to - from) * (1 - Math.pow(1 - t, 3)));
+        if (t < 1) {
+          handle = requestAnimationFrame(tick);
+          frames.add(handle);
+        }
+      };
+      handle = requestAnimationFrame(tick);
+      frames.add(handle);
+    };
+    if (delayMs <= 0) {
+      begin();
+      return;
+    }
+    const id = window.setTimeout(() => {
+      timers.delete(id);
+      begin();
+    }, delayMs);
+    timers.add(id);
+  }
+
+  cleanups.push(() => {
+    for (const id of timers) clearTimeout(id);
+    for (const f of frames) cancelAnimationFrame(f);
+    timers.clear();
+    frames.clear();
+  });
+
   // ── season header ──────────────────────────────────────────────────
   const timeEl = h('b', { class: 'tnum' }, countdown(snap.season.endsAt).label);
   const seasonBar = h('i', { class: 'ps__seasonfill' });
@@ -104,10 +162,21 @@ export function mount(container: HTMLElement): PassInstance {
   const tierRing = RingProgress({ value: snap.pct, size: 76, stroke: 5, tone: 'gold', center: tierNum });
   const xpFill = h('i', { class: 'ps__xpfill' });
   const xpCaption = h('span', { class: 'ps__xpcap tnum' });
+  let xpShown = 0;
+  const renderXp = (v: number): void => {
+    xpCaption.textContent = snap.maxed
+      ? `${fmtInt(Math.round(v))} XP earned this season`
+      : `${fmtInt(Math.round(v))} / ${fmtInt(snap.need)} XP`;
+  };
   const claimAllBtn = Button({
     label: 'Claim all',
     variant: 'primary',
-    size: 'sm',
+    // Full-bleed inside an --r-lg card: 'lg' nests its 20px radius concentrically
+    // with the card's and scales the label to the width it is given.
+    size: 'lg',
+    // The biggest reward action on the screen was inheriting the default
+    // 'select' tick while claimTier/claimChallenge both fire 'win'.
+    haptic: 'win',
     class: 'ps__claimall',
     onTap: () => {
       const got = claimAll();
@@ -136,7 +205,8 @@ export function mount(container: HTMLElement): PassInstance {
   const tierNext = tierCard.querySelector('.ps__tiernext') as HTMLElement;
 
   // ── upsell ─────────────────────────────────────────────────────────
-  const upsell = h('section', { class: 'ps__upsell ps__sec', style: { '--i': '2' } });
+  const upsell = h('section', { class: 'ps__upsell ps__sec', style: { '--i': '3' } });
+  let talliedOnce = false;
 
   function buildUpsell(): void {
     clear(upsell);
@@ -160,14 +230,30 @@ export function mount(container: HTMLElement): PassInstance {
     }
     upsell.classList.remove('is-active');
     const got = trackContents('premium');
+    /**
+     * Both cards carry the ribbon element — the plain one just hides it — so the
+     * two names and the two prices sit on one shared baseline. Two prices shown
+     * for comparison that do not align is the loudest craft error a pricing
+     * block can make.
+     */
     const offerCard = (offer: PassOffer) =>
       h(
         'button',
         { class: cx('ps__offer', offer.tiers > 0 && 'is-bundle'), type: 'button' },
-        offer.tiers > 0 ? h('span', { class: 'ps__offertag caps' }, 'Head start') : null,
+        h(
+          'span',
+          { class: 'ps__offertag caps', 'aria-hidden': offer.tiers > 0 ? null : 'true' },
+          offer.tiers > 0 ? 'Head start' : '',
+        ),
         h('span', { class: 'ps__offername' }, offer.label),
         h('span', { class: 'ps__offerprice' }, icon('gem', { size: 15 }), h('b', { class: 'tnum' }, fmtInt(offer.gems))),
-        h('span', { class: 'ps__offerblurb' }, offer.blurb),
+        h(
+          'span',
+          { class: 'ps__offerblurb' },
+          offer.tiers > 0
+            ? `Same pass, plus ${offer.tiers} tiers the moment you buy.`
+            : 'The second lane for the rest of the season.',
+        ),
       );
 
     const cards = PASS_OFFERS.map((offer) => {
@@ -185,6 +271,30 @@ export function mount(container: HTMLElement): PassInstance {
       return card;
     });
 
+    /**
+     * The tally owns the quantities, so the bullet that restated "8 cosmetics
+     * that never appear in the store" is gone and the body no longer repeats
+     * the back-pay promise the tick below states. Every claim appears once.
+     */
+    const tally: Array<{ to: number; fmt: (v: number) => string; label: string }> = [
+      { to: got.cosmetics, fmt: (v) => fmtInt(Math.round(v)), label: 'cosmetics' },
+      { to: got.exclusives, fmt: (v) => fmtInt(Math.round(v)), label: 'never sold' },
+      { to: got.gems, fmt: (v) => fmtInt(Math.round(v)), label: 'gems' },
+      { to: got.chips, fmt: (v) => `${Math.round(v / 1000)}k`, label: 'chips' },
+    ];
+    const tallyRow = h('div', { class: 'ps__uptally' });
+    tally.forEach((t, i) => {
+      const num = h('b', { class: 'tnum' }, t.fmt(t.to));
+      tallyRow.appendChild(h('span', { class: 'ps__uptallyi' }, num, h('span', { class: 'caps' }, t.label)));
+      if (!talliedOnce) {
+        // 114ms of ecIn stagger for --i:3, then the digits land left to right
+        rampTo(0, t.to, 230 + i * 55, (v) => {
+          num.textContent = t.fmt(v);
+        });
+      }
+    });
+    talliedOnce = true;
+
     upsell.append(
       h('span', { class: 'ps__upedge', 'aria-hidden': 'true' }),
       h('span', { class: 'ps__upglow', 'aria-hidden': 'true' }),
@@ -193,37 +303,18 @@ export function mount(container: HTMLElement): PassInstance {
         { class: 'ps__uphead' },
         h('span', { class: 'ps__upeyebrow caps' }, 'Unlock the second lane'),
         h('h2', { class: 'ps__uptitle' }, 'Premium Pass'),
-        h(
-          'p',
-          { class: 'ps__upbody' },
-          'A second reward on all fifty tiers. Upgrade whenever you like — every tier you have already passed pays out the moment you do.',
-        ),
+        h('p', { class: 'ps__upbody' }, 'A second reward on all fifty tiers. Upgrade whenever you like.'),
       ),
-      h(
-        'div',
-        { class: 'ps__uptally' },
-        ...(
-          [
-            [fmtInt(got.cosmetics), 'cosmetics'],
-            [fmtInt(got.exclusives), 'never sold'],
-            [fmtInt(got.gems), 'gems'],
-            [`${Math.round(got.chips / 1000)}k`, 'chips'],
-          ] as Array<[string, string]>
-        ).map(([n, l]) =>
-          h('span', { class: 'ps__uptallyi' }, h('b', { class: 'tnum' }, n), h('span', { class: 'caps' }, l)),
-        ),
-      ),
+      tallyRow,
+      h('div', { class: 'ps__offers' }, ...cards),
       h(
         'ul',
         { class: 'ps__uplist' },
         ...[
-          `${got.exclusives} cosmetics that never appear in the store`,
-          'Back-pays every tier you have already earned',
-          'Advanced analytics on the stats screen',
-          'No gameplay advantage — cosmetics only',
+          'Back-pays every tier you already passed',
+          'Unlocks the advanced stats screen',
         ].map((t) => h('li', null, icon('check', { size: 13, stroke: 2.6 }), h('span', null, t))),
       ),
-      h('div', { class: 'ps__offers' }, ...cards),
     );
   }
 
@@ -231,7 +322,7 @@ export function mount(container: HTMLElement): PassInstance {
   const trackRail = h('div', { class: 'ps__rail scroll' });
   const trackSec = h(
     'section',
-    { class: 'ps__tracksec ps__sec', style: { '--i': '3' } },
+    { class: 'ps__tracksec ps__sec', style: { '--i': '2' } },
     h(
       'div',
       { class: 'ps__sechead' },
@@ -451,7 +542,8 @@ export function mount(container: HTMLElement): PassInstance {
     ),
   );
 
-  inner.append(header, tierCard, upsell, trackSec, chSec, footer);
+  // Track before upsell: reward art in the first screenful, the offer after it.
+  inner.append(header, tierCard, trackSec, upsell, chSec, footer);
 
   // ── paint ──────────────────────────────────────────────────────────
 
@@ -463,13 +555,14 @@ export function mount(container: HTMLElement): PassInstance {
     tierRing.set(snap.pct);
     tierNext.textContent = snap.maxed ? 'Track complete' : `${fmtInt(snap.need - snap.into)} XP to tier ${snap.tier + 1}`;
     xpFill.style.transform = `scaleX(${snap.pct.toFixed(4)})`;
-    xpCaption.textContent = snap.maxed
-      ? `${fmtInt(snap.xp)} XP earned this season`
-      : `${fmtInt(snap.into)} / ${fmtInt(snap.need)} XP`;
+    // Rolls from 0 on arrival, and from wherever it stood on every claim after
+    // that, so the caption travels with the bar instead of snapping past it.
+    const xpTarget = snap.maxed ? snap.xp : snap.into;
+    rampTo(xpShown, xpTarget, xpShown === 0 ? 190 : 0, renderXp);
+    xpShown = xpTarget;
     const pending = snap.claimableFree.length + snap.claimablePremium.length;
     claimAllBtn.setDisabled(pending === 0);
     claimAllBtn.setLabel(pending > 0 ? `Claim ${pending}` : 'Nothing to claim');
-    claimAllBtn.classList.toggle('is-hot', pending > 0);
     root.classList.toggle('is-premium', snap.premium);
     buildUpsell();
     paintTrack();
@@ -481,10 +574,16 @@ export function mount(container: HTMLElement): PassInstance {
   requestAnimationFrame(() => inner.classList.add('is-in'));
 
   // Open centred on the current tier — the whole point of a horizontal track.
+  // Measured off rects, not offsetLeft: the rail's offsetParent is the wrapper
+  // that carries the 58px lane-tag gutter, so offset maths landed a column and
+  // a half to the left of true centre.
   requestAnimationFrame(() => {
     const target = columns[Math.max(0, snap.tier - 1)];
     if (!target) return;
-    trackRail.scrollLeft = Math.max(0, target.offsetLeft - trackRail.clientWidth / 2 + target.offsetWidth / 2);
+    const rail = trackRail.getBoundingClientRect();
+    const col = target.getBoundingClientRect();
+    const delta = col.left - rail.left - (rail.width - col.width) / 2;
+    trackRail.scrollLeft = Math.max(0, trackRail.scrollLeft + delta);
   });
 
   cleanups.push(onPass(() => repaint()));

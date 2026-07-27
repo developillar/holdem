@@ -15,6 +15,7 @@ import { icon } from '../components/icons.ts';
 import { pressFeedback } from '../components/util.ts';
 import { fmtInt } from '../components/util.ts';
 import { isEquipped, isPremium, owns } from '../../econ/wallet.ts';
+import { RARITY_META } from '../../data/catalog.ts';
 import { previewNode } from './preview.ts';
 
 export interface ItemTileOpts {
@@ -27,6 +28,12 @@ export interface ItemTileOpts {
   playerName?: string;
   /** stagger index for the entrance */
   index?: number;
+  /**
+   * Lead-of-the-rail treatment: names the rarity above the item so a
+   * rarity-mixed row cannot read as a flat set of interchangeable slots. The
+   * size step that goes with it is the rail's business, not the tile's.
+   */
+  emphasis?: boolean;
 }
 
 export interface ItemTileEl extends HTMLElement {
@@ -63,7 +70,7 @@ export function ItemTile(opts: ItemTileOpts): ItemTileEl {
   const el = h(
     'button',
     {
-      class: cx('ec-tile', shiny && 'is-shiny'),
+      class: cx('ec-tile', shiny && 'is-shiny', opts.emphasis && 'is-lead'),
       type: 'button',
       dataset: { rarity: item.rarity, kind: item.kind },
       style: { '--tile-i': String(opts.index ?? 0) },
@@ -74,6 +81,7 @@ export function ItemTile(opts: ItemTileOpts): ItemTileEl {
     h(
       'span',
       { class: 'ec-tile__meta' },
+      opts.emphasis ? h('span', { class: 'ec-tile__rar' }, RARITY_META[item.rarity].label) : null,
       h('span', { class: 'ec-tile__name' }, item.name),
       status,
     ),

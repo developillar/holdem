@@ -328,6 +328,25 @@ export function commentMark(size = 17): SVGSVGElement {
   ]);
 }
 
+/**
+ * The "add a reaction" mark.
+ *
+ * This used to render the post's *default* reaction illustration, which meant
+ * a big-win post drew the same banknote here that already sat in the leftmost
+ * aggregate chip — one mark meaning two different things in a single row.
+ * A neutral monoline face is the affordance ("react"), and the gold plus badge
+ * on the corner says "add"; the specific reaction stays where it belongs, on
+ * the chips and in the long-press picker.
+ */
+export function reactAddMark(size = 21): SVGSVGElement {
+  return draw(size, [
+    { d: 'M20.4 12a8.4 8.4 0 11-8.4-8.4', stroke: 'currentColor', w: 1.7 },
+    { d: 'M8.6 14.3a4.4 4.4 0 006.8 0', stroke: 'currentColor', w: 1.7 },
+    { d: circle(9.1, 9.9, 1.15), fill: 'currentColor' },
+    { d: circle(14.9, 9.9, 1.15), fill: 'currentColor' },
+  ]);
+}
+
 /** Share arrow for the post overflow row. */
 export function shareMark(size = 17): SVGSVGElement {
   return draw(size, [

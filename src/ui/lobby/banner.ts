@@ -415,11 +415,18 @@ export function BannerCarousel(opts: BannerOpts): BannerEl {
     });
   }
 
+  // A carousel nobody is looking at has no business rotating. Two things go
+  // wrong without this: the dwell on slide one is spent while the screen is
+  // still assembling — so the first thing the player sees is a slide already
+  // sliding away — and the deck keeps advancing after it has scrolled out of
+  // view, so coming back up the lobby lands you on an arbitrary slide.
+  let visible = false;
+
   // ── auto-advance + indicator progress on one rAF ───────────────────
   const frame = (now: number) => {
     raf = requestAnimationFrame(frame);
     const active = dots[index];
-    if (paused || dragging !== -1 || document.hidden) {
+    if (paused || !visible || dragging !== -1 || document.hidden) {
       autoAt = Math.max(autoAt, now + 900);
       active.style.setProperty('--p', '0');
       return;
@@ -524,6 +531,19 @@ export function BannerCarousel(opts: BannerOpts): BannerEl {
   });
   ro.observe(el);
 
+  // The dwell clock restarts the moment the deck comes into view, so every
+  // slide gets its full read whether it arrived by entrance or by scroll.
+  const io = new IntersectionObserver(
+    (entries) => {
+      const now = entries[entries.length - 1].isIntersecting;
+      if (now === visible) return;
+      visible = now;
+      if (visible) autoAt = performance.now() + autoSpan;
+    },
+    { threshold: 0.4 },
+  );
+  io.observe(el);
+
   measure();
   motion.jump(0);
   paint(0);
@@ -546,6 +566,7 @@ export function BannerCarousel(opts: BannerOpts): BannerEl {
     raf = 0;
     motion.stop();
     ro.disconnect();
+    io.disconnect();
     offDown();
     offMove();
     offUp();

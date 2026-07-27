@@ -17,7 +17,7 @@
  *   feed.dispose();
  */
 import { Rng } from '../../core/rng.ts';
-import { STAKE_LIST, money } from '../../core/stakes.ts';
+import { STAKE_LIST } from '../../core/stakes.ts';
 import type { GameVariant, LobbyTable, Stake, StakeId, TableFormat } from '../../core/types.ts';
 
 export interface StakeLive {
@@ -337,23 +337,48 @@ export function coarseMs(ms: number): string {
   return `${hrs}h ${m}m`;
 }
 
+const GROUPED = new Intl.NumberFormat('en-US');
+const CENTS = new Intl.NumberFormat('en-US', {
+  minimumFractionDigits: 2,
+  maximumFractionDigits: 2,
+});
+
 /**
- * `money()` from core keeps a fixed precision, which reads as `$25.0` for a
- * round number. The lobby shows a lot of round numbers, so trim the dead
- * zeros — `$25.0` → `$25`, `$4.00` → `$4`, `$1.32` stays put.
+ * The one money formatter in the lobby. Everything with a `$` in front of it
+ * goes through here — pots, buy-ins, prize pools, the roll — so the screen
+ * never argues with itself about precision.
+ *
+ * The rule: **cents below $1,000, grouped whole dollars at or above.** That is
+ * how a poker client writes a pot ($36.90, never $36.9) and how a money app
+ * writes a balance ($24,850, never $24.9K). One decimal place is the tell this
+ * exists to kill, and `money()` from core produces it constantly.
  */
 export function cash(n: number): string {
-  const s = money(n);
-  // Cents matter below a dollar — never trim those.
-  if (Math.abs(n) < 1 || !s.includes('.')) return s;
-  return s.replace(/(\.\d*?)0+(?=K?$)/, '$1').replace(/\.(?=K?$)/, '');
+  const abs = Math.abs(n);
+  const sign = n < 0 ? '−' : '';
+  return abs >= 1000 ? `${sign}$${GROUPED.format(Math.round(abs))}` : `${sign}$${CENTS.format(abs)}`;
 }
 
-/** 12480 → "12.5K". Player counts only; money uses `cash()` above. */
-export function compactCount(n: number): string {
-  if (n >= 10_000) return `${(n / 1000).toFixed(1)}K`;
-  if (n >= 1000) return `${(n / 1000).toFixed(2)}K`;
-  return String(Math.round(n));
+/**
+ * A range at a single precision, chosen by the larger end, so the two numbers
+ * never disagree: `$4.00 – $25.00` and `$200 – $1,250`, never `$200.00 – $1,250`.
+ */
+export function cashRange(lo: number, hi: number): string {
+  if (Math.max(Math.abs(lo), Math.abs(hi)) >= 1000) {
+    return `$${GROUPED.format(Math.round(lo))} – $${GROUPED.format(Math.round(hi))}`;
+  }
+  return `$${CENTS.format(lo)} – $${CENTS.format(hi)}`;
+}
+
+/**
+ * The one count formatter. Grouped integers, because the lobby never shows a
+ * count large enough to need abbreviating and mixing `900` with `1.8K` in one
+ * row actively misinforms — `900` optically outranks `1.8K`. Abbreviation only
+ * starts at a million, where grouping genuinely stops fitting.
+ */
+export function fmtCount(n: number): string {
+  const r = Math.round(n);
+  return r >= 1_000_000 ? `${(r / 1_000_000).toFixed(1)}M` : GROUPED.format(r);
 }
 
 /** The greeting is time-aware — small touch, reads as a considered app. */

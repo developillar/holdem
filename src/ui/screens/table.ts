@@ -82,6 +82,22 @@ function cashText(v: number): string {
   return `${sign}$${fixed.endsWith('.00') ? fixed.slice(0, -3) : fixed}`;
 }
 
+/**
+ * Money for a hero readout: always two decimals, always grouped. `cashText`
+ * drops trailing zeroes so stack pills stay dense, but on a 52px buy-in
+ * amount sitting under a "$0.05/$0.10" stakes line, a bare "$10" reads as an
+ * integer label rather than money — and the string length must not change
+ * while the value is being dragged.
+ */
+function cashExact(v: number): string {
+  const a = Math.abs(v);
+  const sign = v < 0 ? '-' : '';
+  const fixed = (Math.round(a * 100) / 100).toFixed(2);
+  const dot = fixed.indexOf('.');
+  const grouped = fixed.slice(0, dot).replace(/\B(?=(\d{3})+$)/g, ',');
+  return `${sign}$${grouped}${fixed.slice(dot)}`;
+}
+
 function stage(): StageBridge | null {
   const w = window as unknown as { __royale?: { renderer?: StageBridge } };
   return w.__royale?.renderer ?? null;
@@ -274,6 +290,7 @@ export function mount(container: HTMLElement, params: TableScreenParams = {}): T
 
   const buyIn = createBuyInSheet({
     fmt,
+    fmtHero: (v: number): string => (format === 'sng' ? chipFmt(v) : cashExact(v)),
     onConfirm: (amount) => {
       if (!seated) void sitDown(amount);
       else {

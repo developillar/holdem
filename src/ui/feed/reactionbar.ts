@@ -19,7 +19,7 @@ import { REACTION_META, REACTION_KINDS, defaultReactionFor, topReactions, totalR
 import { getFeed } from '../../social/feed.ts';
 import { haptic, reduceMotion } from '../components/util.ts';
 import { personaAt, PERSONA_POOL_SIZE, hashString } from '../../data/names.ts';
-import { reactionGlyph, commentMark, shareMark } from './glyphs.ts';
+import { reactionGlyph, reactAddMark, commentMark, shareMark } from './glyphs.ts';
 
 export interface ReactionBarOpts {
   onComments?: () => void;
@@ -119,7 +119,7 @@ export function ReactionBar(post: FeedPost, opts: ReactionBarOpts = {}): Reactio
       'aria-label': `React to this post — ${REACTION_META[defaultReactionFor(post.kind)].label}`,
       'aria-haspopup': 'true',
     },
-    h('span', { class: 'rbar__addg' }, reactionGlyph(defaultReactionFor(post.kind), 21)),
+    h('span', { class: 'rbar__addg' }, reactAddMark(21)),
     h('span', { class: 'rbar__addplus', 'aria-hidden': 'true' }),
   ) as HTMLButtonElement;
 
@@ -185,7 +185,7 @@ export function ReactionBar(post: FeedPost, opts: ReactionBarOpts = {}): Reactio
     const stack = h('span', { class: 'rbar__stack' });
     people.forEach((p, i) => {
       stack.appendChild(
-        h('span', { class: 'rbar__face', style: { zIndex: String(9 - i) } }, faceDisc(p.name, p.avatarId, 19)),
+        h('span', { class: 'rbar__face', style: { zIndex: String(9 - i) } }, faceDisc(p.name, p.avatarId, 17)),
       );
     });
     faces.appendChild(stack);

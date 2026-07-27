@@ -25,7 +25,7 @@ import { openModal } from '../components/modal.ts';
 import { Pill, RarityTag } from '../components/pill.ts';
 import { icon } from '../components/icons.ts';
 import { CountUp } from '../components/countup.ts';
-import { fmtInt, haptic, reduceMotion } from '../components/util.ts';
+import { fmtInt, haptic, pressFeedback, reduceMotion } from '../components/util.ts';
 import { RARITY_META } from '../../data/catalog.ts';
 import { canPurchase, econ, equip, gems, isEquipped, isPremium, owns, purchase } from '../../econ/wallet.ts';
 import { previewNode } from './preview.ts';
@@ -400,7 +400,17 @@ export interface GemBalanceEl extends HTMLButtonElement {
   setValue(n: number): void;
 }
 
-/** The wallet strip used at the top of the store and in sheets. */
+/**
+ * A tappable gem readout for surfaces that do **not** already sit under the
+ * shell's top bar — sheets and modals. Screens keep a single gem number on
+ * screen at a time, so the store header deliberately does not use this.
+ *
+ * Press state goes through `pressFeedback` like every other control: bare
+ * `:active` is unreliable in WebKit without a touchstart binding, which left
+ * this the one control whose `haptic('tick')` fired with no matching visual.
+ * The 40px pill also carries a `::after` hit expander (see `.ec-bal` in
+ * store.css) so the real target is 48px.
+ */
 export function GemBalance(opts: { onTap?(): void } = {}): GemBalanceEl {
   const count = CountUp({ value: econ().gems, format: fmtInt, class: 'ec-bal__n' });
   const el = h(
@@ -410,6 +420,7 @@ export function GemBalance(opts: { onTap?(): void } = {}): GemBalanceEl {
     count,
     h('span', { class: 'ec-bal__plus' }, icon('plus', { size: 14, stroke: 2.6 })),
   ) as unknown as GemBalanceEl;
+  pressFeedback(el);
   el.addEventListener('click', () => {
     haptic('tick');
     opts.onTap?.();

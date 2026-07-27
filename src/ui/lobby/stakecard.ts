@@ -18,7 +18,7 @@ import { haptic, pressFeedback } from '../components/util.ts';
 
 import type { Stake } from '../../core/types.ts';
 import type { StakeLive } from './data.ts';
-import { cash, compactCount } from './data.ts';
+import { cash, cashRange, fmtCount } from './data.ts';
 import type { StakeGate } from './bankroll.ts';
 
 export interface StakeRowOpts {
@@ -153,7 +153,7 @@ export function StakeRow(opts: StakeRowOpts): StakeRowEl {
       h(
         'span',
         { class: 'sk__range tnum' },
-        `${cash(stake.minBuyIn)} – ${cash(stake.maxBuyIn)}`,
+        cashRange(stake.minBuyIn, stake.maxBuyIn),
         openSeats,
       ),
       lockBox,
@@ -179,7 +179,7 @@ export function StakeRow(opts: StakeRowOpts): StakeRowEl {
   let lastPlayers = -1;
   el.update = (live, gate) => {
     if (live.players !== lastPlayers) {
-      players.textContent = compactCount(live.players);
+      players.textContent = fmtCount(live.players);
       lastPlayers = live.players;
     }
     const dir = live.trend > 2 ? 1 : live.trend < -2 ? -1 : 0;

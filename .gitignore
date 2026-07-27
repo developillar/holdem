@@ -4,3 +4,4 @@ shots/
 .vite/
 *.log
 .DS_Store
+.qa-tmp/

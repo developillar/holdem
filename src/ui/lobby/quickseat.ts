@@ -45,7 +45,11 @@ const NAMES = [
 ];
 
 export function QuickSeat(opts: QuickSeatOpts): QuickSeatEl {
-  const sub = h('span', { class: 'qs__sub' }, 'Finding the softest open seat…');
+  // Split so the money half can carry `.tnum` — an avg pot that reflows while
+  // the 1Hz feed updates it is a rubric auto-failure on its own.
+  const subRoom = h('span', null, 'Finding the softest open seat…');
+  const subPot = h('span', { class: 'tnum' }, '');
+  const sub = h('span', { class: 'qs__sub' }, subRoom, subPot);
   const stakeChip = h('span', { class: 'qs__chip tnum' }, '—');
   const seatsChip = h('span', { class: 'qs__chip qs__chip--good' }, '—');
 
@@ -105,10 +109,13 @@ export function QuickSeat(opts: QuickSeatOpts): QuickSeatEl {
     stakeChip.textContent = stake.label;
     seatsChip.textContent = open > 0 ? `${open} ${open === 1 ? 'seat' : 'seats'} open` : 'Waitlist';
     seatsChip.classList.toggle('qs__chip--good', open > 0);
-    sub.textContent =
-      open > 0
-        ? `${tableName(pick.id)} · ${cash(pick.avgPot)} avg pot`
-        : `Next seat at ${tableName(pick.id)}`;
+    if (open > 0) {
+      subRoom.textContent = `${tableName(pick.id)} · `;
+      subPot.textContent = `${cash(pick.avgPot)} avg pot`;
+    } else {
+      subRoom.textContent = `Next seat at ${tableName(pick.id)}`;
+      subPot.textContent = '';
+    }
   };
 
   el.dispose = () => {

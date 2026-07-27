@@ -17,6 +17,35 @@
  */
 
 /* ═══════════════════════════════════════════════════════════════════
+   SAFE-AREA FLOOR
+   ═══════════════════════════════════════════════════════════════════ */
+
+/**
+ * `env(safe-area-inset-*)` resolves to 0 in any context that does not report
+ * insets — a desktop browser, a capture harness, an embedded webview — and the
+ * chrome then rides up under the status bar / Dynamic Island. `max()` floors
+ * it so a real device inset always still wins.
+ *
+ * Values are byte-identical to the floor declared in lobby.css so the two are
+ * order-independent; CSS here is route-chunked, and a deep link straight to
+ * /store must not depend on the lobby's stylesheet having been fetched. This
+ * belongs in tokens.css — flagged for whoever owns that file.
+ */
+:root:root {
+  --safe-t: max(env(safe-area-inset-top, 0px), 44px);
+  --safe-b: max(env(safe-area-inset-bottom, 0px), 20px);
+}
+
+/* A 44px floor clears a status bar but not a Dynamic Island, whose glass ends
+   at ~48pt. On the phone class this app targets (iPhone 15 — 59pt top inset)
+   floor at that real value. Short screens have no island and keep 44px. */
+@media (min-height: 780px) {
+  :root:root {
+    --safe-t: max(env(safe-area-inset-top, 0px), 59px);
+  }
+}
+
+/* ═══════════════════════════════════════════════════════════════════
    RARITY RAMP
    ═══════════════════════════════════════════════════════════════════ */
 
@@ -59,6 +88,28 @@
   overscroll-behavior-y: contain;
   -webkit-overflow-scrolling: touch;
   padding: calc(var(--chrome-t, 0px) + var(--sp-3)) 0 calc(var(--chrome-b, 0px) + var(--sp-9));
+  /**
+   * Content dissolves before it reaches the tab bar instead of sitting legibly
+   * behind 28px of blur — a gold eyebrow ghosting through the bar at ~14% is
+   * what makes a translucent bar read as a compositing smudge rather than a
+   * layer. The mask lives on the scroller, not on `__inner`: the scroller's
+   * box is the viewport, so the fade stays pinned to the bottom edge while the
+   * page travels underneath it. Ramp is centred on the bar's top edge.
+   */
+  -webkit-mask-image: linear-gradient(
+    to bottom,
+    #000 0,
+    #000 calc(100% - var(--chrome-b, 0px) - 14px),
+    rgba(0, 0, 0, 0.42) calc(100% - var(--chrome-b, 0px)),
+    transparent calc(100% - var(--chrome-b, 0px) + 14px)
+  );
+  mask-image: linear-gradient(
+    to bottom,
+    #000 0,
+    #000 calc(100% - var(--chrome-b, 0px) - 14px),
+    rgba(0, 0, 0, 0.42) calc(100% - var(--chrome-b, 0px)),
+    transparent calc(100% - var(--chrome-b, 0px) + 14px)
+  );
 }
 
 .st__aura,
@@ -162,7 +213,7 @@
 
 .st__head {
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   justify-content: space-between;
   gap: var(--sp-4);
 }
@@ -170,7 +221,7 @@
 .st__headtext {
   display: flex;
   flex-direction: column;
-  gap: 3px;
+  gap: 4px;
   min-width: 0;
 }
 
@@ -178,21 +229,89 @@
   color: var(--c-gold-400);
 }
 
+/**
+ * A screen label, not the product. It was set at `--t-display` (700/34px) —
+ * the loudest object on a merchandising screen was the static word
+ * "Collection", two steps larger than the thing actually for sale. Dropped to
+ * 26/650 so the eye lands on the offer and treats this as the sign above the
+ * door it is.
+ */
 .st__title {
   margin: 0;
-  font: var(--t-display);
-  letter-spacing: -0.028em;
+  font: 650 26px/1.08 var(--f-ui);
+  letter-spacing: -0.022em;
   color: var(--c-white);
 }
 
+/* ── collection meter (header, right slot) ──────────────────────── */
+
+/**
+ * Sits where the duplicate gem pill used to. Same pill silhouette so the row
+ * still has a right-hand anchor, but it answers a different question and
+ * carries no "+" — nothing on this screen offers the same affordance twice.
+ */
 .st__coll {
-  font: var(--t-body-sm);
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
+  height: 40px;
+  padding: 0 13px 0 8px;
+  flex: none;
+  border-radius: var(--r-pill);
+  background: linear-gradient(180deg, rgba(40, 49, 69, 0.7), rgba(16, 20, 30, 0.82));
+  box-shadow:
+    var(--e-1),
+    inset 0 1px 0 rgba(255, 255, 255, 0.08),
+    inset 0 0 0 1px rgba(255, 255, 255, 0.06);
+}
+
+.st__collring {
+  width: 26px;
+  height: 26px;
+  flex: none;
+  overflow: visible;
+}
+
+.st__colltrack {
+  stroke: rgba(255, 255, 255, 0.12);
+}
+
+.st__collarc {
+  stroke: var(--c-gold-300);
+  filter: drop-shadow(0 0 5px rgba(237, 201, 107, 0.5));
+  transition: stroke-dashoffset var(--d-lux) var(--ease-out);
+}
+
+.st__colltext {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+}
+
+.st__collnum {
+  font: 650 14px/1 var(--f-num);
+  letter-spacing: -0.012em;
+  color: var(--c-white);
+}
+
+.st__collnum i {
+  font-style: normal;
+  font-weight: 500;
   color: var(--c-slate-400);
 }
 
-/* ── gem balance pill ───────────────────────────────────────────── */
+.st__colllabel {
+  font: 700 8.5px/1.2 var(--f-ui);
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--c-slate-400);
+}
+
+/* ── gem balance pill (sheets only — see detail.ts) ─────────────── */
 
 .ec-bal {
+  position: relative;
   display: inline-flex;
   align-items: center;
   gap: 7px;
@@ -208,8 +327,17 @@
   transition: transform var(--d-fast) var(--ease-snap);
 }
 
-.ec-bal:active {
-  transform: scale(0.96);
+/* Hit expander — the pill is 40px tall, the target is 48. Same convention as
+   `.wal::after` and `.topbar__add::after` in the shell. */
+.ec-bal::after {
+  content: '';
+  position: absolute;
+  inset: -4px;
+  border-radius: inherit;
+}
+
+.ec-bal.is-press {
+  transform: scale(0.955);
 }
 
 .ec-bal__ic {
@@ -239,22 +367,41 @@
    STORE — FEATURED HERO
    ═══════════════════════════════════════════════════════════════════ */
 
+/**
+ * ONE LIGHT SOURCE.
+ *
+ * The card used to fill with a neutral slate gradient on a 168° axis — light
+ * from the upper left — while the rarity glow was thrown from a radial well
+ * above and left of centre. Two contradicting directions inside one 380px
+ * object, which is why the material read as "gradient" rather than "lit".
+ *
+ * Now everything points the same way: the body gradient runs straight down
+ * (180°) from a rarity-tinted top, the hairline is brightest along the top
+ * edge, the glow sits just above the product, and the product casts a contact
+ * ellipse onto the floor beneath it. Light comes from above and behind — one
+ * story, told four times.
+ */
 .st__hero {
   position: relative;
   display: grid;
   grid-template-columns: minmax(0, 1fr);
   gap: var(--sp-4);
-  padding: var(--sp-5) var(--sp-5) var(--sp-5);
+  padding: var(--sp-4) var(--sp-5) var(--sp-5);
   border-radius: var(--r-xl);
   text-align: left;
   overflow: hidden;
   isolation: isolate;
   background:
-    linear-gradient(168deg, rgba(42, 51, 71, 0.9), rgba(13, 17, 26, 0.96) 62%),
+    linear-gradient(
+      180deg,
+      color-mix(in oklab, var(--rar) 15%, rgba(36, 43, 62, 0.94)) 0%,
+      color-mix(in oklab, var(--rar) 6%, rgba(17, 21, 32, 0.96)) 48%,
+      rgba(10, 13, 20, 0.97) 100%
+    ),
     var(--c-ink);
   box-shadow:
     var(--e-4),
-    inset 0 1px 0 rgba(255, 255, 255, 0.09);
+    inset 0 1px 0 rgba(255, 255, 255, 0.11);
   transition: transform var(--d-fast) var(--ease-snap);
 }
 
@@ -262,13 +409,14 @@
   transform: scale(0.985);
 }
 
+/* Hairline: rarity at the lit top edge, black at the shaded bottom. */
 .st__heroedge {
   position: absolute;
   inset: 0;
   border-radius: inherit;
   pointer-events: none;
   padding: 1px;
-  background: linear-gradient(160deg, var(--rar-a), rgba(255, 255, 255, 0.06) 42%, rgba(0, 0, 0, 0.4));
+  background: linear-gradient(180deg, var(--rar-a), rgba(255, 255, 255, 0.06) 32%, rgba(0, 0, 0, 0.45));
   -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
   -webkit-mask-composite: xor;
   mask-composite: exclude;
@@ -276,13 +424,13 @@
 
 .st__heroglow {
   position: absolute;
-  top: -46%;
+  top: -30%;
   left: 50%;
-  width: 120%;
-  height: 130%;
-  margin-left: -60%;
+  width: 116%;
+  height: 116%;
+  margin-left: -58%;
   pointer-events: none;
-  background: radial-gradient(46% 46% at 50% 42%, var(--rar-b), transparent 72%);
+  background: radial-gradient(44% 44% at 50% 44%, var(--rar-b), transparent 70%);
 }
 
 .st__herobeam {
@@ -313,12 +461,85 @@
   }
 }
 
+/**
+ * A fixed frame, not a `min-height` that grows to whatever the day's item is.
+ * The art is up-scaled to fill it (see HERO_ART in screens/store.ts), so the
+ * product occupies ~90% of the stage instead of the ~55% that made the hero
+ * read as an empty rectangle with a small vector floating in it.
+ *
+ * `pointer-events: none` because a sparse preview (a chip stack paints the
+ * middle half of a square canvas) is deliberately larger than the frame and
+ * would otherwise sit invisibly over the card's own controls.
+ */
+/* Flex, not grid: a grid row sized to an over-tall item overflows downward
+   only, so the art would hang out of the bottom of the frame and over the
+   copy. Flex `align-items: center` overflows symmetrically, which is what a
+   frame smaller than its content needs. */
 .st__herostage {
   position: relative;
-  display: grid;
-  place-items: center;
-  min-height: 172px;
-  filter: drop-shadow(0 14px 30px rgba(2, 4, 8, 0.6));
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: var(--stage-h, 152px);
+  pointer-events: none;
+}
+
+/* The art sits above both floor pseudo-elements. */
+.st__herostage > * {
+  position: relative;
+  z-index: 1;
+}
+
+/* Drop-shadow on the art itself, never on the frame: the frame is smaller
+   than its child, and a filter on the container risks clipping the overflow. */
+.st__herostage > .ec-prev,
+.st__herostage > .av-art,
+.st__herostage > .ec-frame,
+.st__herostage > .ec-emote,
+.st__herostage > .ec-title {
+  filter: drop-shadow(0 12px 24px rgba(2, 4, 8, 0.62));
+}
+
+/**
+ * The floor, in two parts. A contact shadow painted straight onto a near-black
+ * card is invisible — black on black is nothing — so the product first gets a
+ * lit pedestal (bounce off the rarity glow), and the hard contact ellipse then
+ * bites into it. That pairing is what reads as "resting on something"; the
+ * 30px drop-shadow alone only ever read as "floating".
+ */
+.st__herostage::before {
+  content: '';
+  position: absolute;
+  left: 50%;
+  bottom: -10px;
+  width: 88%;
+  height: 46px;
+  margin-left: -44%;
+  border-radius: 50%;
+  pointer-events: none;
+  background: radial-gradient(
+    50% 50% at 50% 50%,
+    color-mix(in oklab, var(--rar) 30%, transparent),
+    transparent 70%
+  );
+}
+
+.st__herostage::after {
+  content: '';
+  position: absolute;
+  left: 50%;
+  bottom: 2px;
+  width: 70%;
+  height: 14px;
+  margin-left: -35%;
+  border-radius: 50%;
+  pointer-events: none;
+  background: radial-gradient(
+    50% 50% at 50% 50%,
+    rgba(2, 4, 8, 0.82),
+    rgba(2, 4, 8, 0.38) 44%,
+    transparent 72%
+  );
 }
 
 .st__herostage .ec-prev--table,
@@ -339,9 +560,18 @@
   gap: var(--sp-2);
 }
 
+/**
+ * An eyebrow, set as an eyebrow: 11/700 at 0.08em, coloured off the live
+ * rarity ramp rather than a hard-coded pink. It is lifted toward white so it
+ * stays a label at 11px instead of a second shout competing with the name —
+ * `--rar` alone is a saturated fill colour, not a text colour.
+ */
 .st__herotag {
-  color: var(--rar);
-  text-shadow: 0 0 14px var(--rar-b);
+  font: 700 11px/1 var(--f-ui);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: color-mix(in oklab, var(--rar) 78%, #ffffff);
+  text-shadow: 0 0 16px var(--rar-a);
 }
 
 .st__herotime {
@@ -350,9 +580,11 @@
   color: var(--c-slate-400);
 }
 
+/* The product. Two steps up from the screen label above it — on a
+   merchandising screen the item name is the largest type on the page. */
 .st__heroname {
-  font: var(--t-h1);
-  letter-spacing: -0.024em;
+  font: 700 32px/1.02 var(--f-ui);
+  letter-spacing: -0.03em;
   color: var(--c-white);
 }
 
@@ -378,6 +610,14 @@
    STORE — SPOTLIGHT RAIL
    ═══════════════════════════════════════════════════════════════════ */
 
+/**
+ * `scroll-padding-left` is load-bearing, not decoration. With snap alignment
+ * on `start` and no scroll padding, the browser snaps the first tile's start
+ * edge to the scrollport origin and eats the rail's 16px inset — the first
+ * card landed at x≈2 while the section header above it started at x=16. The
+ * scroll padding moves the snap origin in by one gutter so the rail shares the
+ * screen's gutter like every other block.
+ */
 .st__spotrail {
   display: flex;
   gap: var(--sp-3);
@@ -385,13 +625,58 @@
   padding: 2px var(--gutter) var(--sp-2);
   margin: 0 calc(var(--gutter) * -1);
   scroll-snap-type: x proximity;
+  scroll-padding-left: var(--gutter);
   scrollbar-width: none;
+  /* The peeking tile fades instead of being guillotined flat against the
+     display edge — it reads as "there is more" rather than as a crop bug. */
+  -webkit-mask-image: linear-gradient(90deg, #000 calc(100% - 28px), transparent);
+  mask-image: linear-gradient(90deg, #000 calc(100% - 28px), transparent);
 }
 
 .st__spot {
   flex: none;
-  width: 118px;
+  width: 116px;
   scroll-snap-align: start;
+}
+
+/**
+ * The rail leads with its rarest piece at half again the width of the rest.
+ * Identical tiles make a rarity-mixed row read as a set of slots; one size
+ * step and one named rarity is all it takes for the row to read as curated.
+ */
+.st__spot--lead {
+  width: 158px;
+  padding: var(--sp-2) var(--sp-2) 11px;
+  border-radius: var(--r-lg);
+  box-shadow:
+    var(--e-3),
+    0 0 30px -14px var(--rar),
+    inset 0 1px 0 rgba(255, 255, 255, 0.1);
+}
+
+.st__spot--lead .ec-tile__stage {
+  height: 106px;
+}
+
+.st__spot--lead .ec-tile__stage > * {
+  max-height: 100px;
+}
+
+.st__spot--lead .ec-tile__name {
+  font: 660 14px/1.2 var(--f-ui);
+  letter-spacing: -0.016em;
+  color: var(--c-white);
+}
+
+.st__spot--lead .ec-tile__status {
+  font: 650 12.5px/1.2 var(--f-num);
+}
+
+.st__spot--lead .ec-tile__floor {
+  bottom: 4px;
+  width: 66%;
+  margin-left: -33%;
+  height: 10px;
 }
 
 /* ═══════════════════════════════════════════════════════════════════
@@ -691,6 +976,15 @@
   gap: 2px;
   min-width: 0;
   padding: 0 3px;
+}
+
+/* Only the rail's lead tile names its rarity — see ItemTile({ emphasis }). */
+.ec-tile__rar {
+  font: 700 9px/1.3 var(--f-ui);
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: var(--rar);
+  text-shadow: 0 0 12px var(--rar-b);
 }
 
 .ec-tile__name {
@@ -1500,6 +1794,29 @@
    PREMIUM PASS — HEADER
    ═══════════════════════════════════════════════════════════════════ */
 
+/**
+ * The top bar's `+` is a buy-currency utility. Rendered in filled gold it was
+ * the single brightest pixel group on the pass screen — brighter than the Claim
+ * CTA it sits 400px above — so the eye landed on a shortcut instead of the
+ * action. On this route it drops to a ghost disc: same 44px target (the
+ * `::after` hit expansion is untouched), no metal, no idle bloom.
+ *
+ * Scoped to `[data-route='pass']` on purpose — the shell writes the route onto
+ * the document element, and the top bar belongs to nav.css, which this screen
+ * does not own.
+ */
+html[data-route='pass'] .topbar__add {
+  color: var(--c-slate-200);
+  background: rgba(255, 255, 255, 0.06);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.1),
+    inset 0 0 0 1px rgba(255, 255, 255, 0.09);
+}
+
+html[data-route='pass'] .topbar__add-glow {
+  display: none;
+}
+
 .ps__head {
   display: flex;
   flex-direction: column;
@@ -1513,8 +1830,15 @@
   gap: var(--sp-3);
 }
 
+/**
+ * ACCENT RATION — gold means exactly one thing on this screen: "value you can
+ * claim". That is the tier ring (your progress toward it) and the Claim button
+ * (the action). Every decorative gold surface — eyebrow, display title, clock
+ * icon, season bar, xp bar, the top bar's `+` — is demoted to neutral or to a
+ * hairline-weight tint so the eye has one landing point and one travel order.
+ */
 .ps__eyebrow {
-  color: var(--c-gold-400);
+  color: var(--c-slate-300);
 }
 
 .ps__clock {
@@ -1530,21 +1854,20 @@
 }
 
 .ps__clock .r-ic {
-  color: var(--c-gold-300);
+  color: var(--c-slate-300);
 }
 
 .ps__clock b {
   color: var(--c-white);
 }
 
+/* White, not gold. The warm aura behind the header already lights this type;
+   spending the metal gradient on it only competes with the ring below. */
 .ps__title {
   margin: 0;
   font: var(--t-display);
   letter-spacing: -0.03em;
-  background: var(--grad-gold);
-  -webkit-background-clip: text;
-  background-clip: text;
-  color: transparent;
+  color: var(--c-white);
 }
 
 .ps__tagline {
@@ -1563,12 +1886,13 @@
   background: rgba(255, 255, 255, 0.08);
 }
 
+/* Hairline weight — this is a season clock, not a reward. Flat tint, no ramp. */
 .ps__seasonfill {
   display: block;
   height: 100%;
   transform-origin: left center;
   border-radius: inherit;
-  background: linear-gradient(90deg, var(--c-gold-600), var(--c-gold-300));
+  background: rgba(237, 201, 107, 0.34);
   transition: transform var(--d-lux) var(--ease-out);
 }
 
@@ -1599,16 +1923,24 @@
   mask-composite: exclude;
 }
 
+/**
+ * Fires ONCE, on mount, riding just behind the card's own entrance — a card
+ * catching the light as it lands. Not a 9s metronome the user never asked for.
+ */
 .ps__cardshine {
   position: absolute;
   top: -70%;
   left: -40%;
   width: 40%;
   height: 240%;
+  opacity: 0;
   pointer-events: none;
   transform: rotate(20deg);
   background: linear-gradient(100deg, transparent, rgba(255, 255, 255, 0.09), transparent);
-  animation: heroBeam 9s var(--ease-in-out) infinite;
+}
+
+.is-in .ps__cardshine {
+  animation: heroBeam 1500ms var(--ease-in-out) 380ms 1 both;
 }
 
 .ps__tiern {
@@ -1626,7 +1958,7 @@
 }
 
 .ps__tierlabel {
-  color: var(--c-slate-400);
+  color: var(--c-slate-300);
 }
 
 .ps__tiernext {
@@ -1643,53 +1975,59 @@
   box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.55);
 }
 
+/* Flat tint, no bloom. The ring above already carries the gold in this card. */
 .ps__xpfill {
   display: block;
   height: 100%;
   border-radius: inherit;
   transform-origin: left center;
-  background: var(--grad-gold);
-  box-shadow: 0 0 10px rgba(237, 201, 107, 0.6);
+  background: rgba(237, 201, 107, 0.5);
   transition: transform var(--d-lux) var(--ease-out);
 }
 
 .ps__xpcap {
   font: var(--t-micro);
-  color: var(--c-slate-400);
+  color: var(--c-slate-300);
 }
 
 .ps__claimall {
   grid-column: 1 / -1;
+  margin-top: var(--sp-1);
 }
 
-.ps__claimall.is-hot {
-  animation: claimPulse 2.2s var(--ease-in-out) infinite;
-}
-
-@keyframes claimPulse {
-  0%,
-  100% {
-    transform: scale(1);
-  }
-  50% {
-    transform: scale(1.018);
-  }
+/**
+ * No idle pulse. A CTA that scales forever is the cheapest signal in F2P and it
+ * reads as a loop, not as urgency — the count-up on the XP line and the gold
+ * itself are the invitation. The tap flare (btnFlare) still fires on press.
+ */
+.ps .r-btn--primary:not(.is-flare) .r-btn__sheen {
+  animation: none;
+  opacity: 0;
 }
 
 /* ── upsell ─────────────────────────────────────────────────────── */
 
+/**
+ * The end stop runs to 100%, not 62% — a container whose lower half is
+ * pixel-identical to the page is not a container. The start is a saturated
+ * amber rather than the old rgba(64,50,20) khaki, and the box gets a real
+ * bottom lip so the card has a lit top edge and a shadowed base.
+ */
 .ps__upsell {
   position: relative;
   padding: var(--sp-5);
   border-radius: var(--r-lg);
   overflow: hidden;
-  background: linear-gradient(160deg, rgba(64, 50, 20, 0.9), rgba(15, 17, 26, 0.96) 62%);
-  box-shadow: var(--e-3);
+  background: linear-gradient(160deg, rgba(78, 56, 12, 0.92), rgba(24, 22, 30, 0.97) 100%);
+  box-shadow:
+    var(--e-3),
+    inset 0 1px 0 rgba(255, 255, 255, 0.1),
+    inset 0 -1px 0 rgba(0, 0, 0, 0.6);
 }
 
 .ps__upsell.is-active {
   padding: var(--sp-4);
-  background: linear-gradient(160deg, rgba(20, 52, 42, 0.86), rgba(11, 18, 24, 0.94));
+  background: linear-gradient(160deg, rgba(20, 52, 42, 0.86), rgba(11, 18, 24, 0.94) 100%);
 }
 
 .ps__upedge {
@@ -1715,7 +2053,7 @@
   width: 70%;
   height: 200%;
   pointer-events: none;
-  background: radial-gradient(50% 40% at 50% 50%, rgba(217, 169, 58, 0.2), transparent 70%);
+  background: radial-gradient(50% 40% at 50% 50%, rgba(217, 169, 58, 0.12), transparent 70%);
 }
 
 .ps__uphead {
@@ -1725,8 +2063,9 @@
   gap: 5px;
 }
 
+/* Warm-muted, not saturated: a label on a warm card, not a third gold surface. */
 .ps__upeyebrow {
-  color: var(--c-gold-300);
+  color: rgba(246, 224, 160, 0.68);
 }
 
 .ps__uptitle {
@@ -1771,36 +2110,46 @@
 .ps__uptallyi b {
   font: 700 17px/1 var(--f-num);
   letter-spacing: -0.028em;
-  color: var(--c-gold-200);
+  color: var(--c-white);
 }
 
+/* 8.5px at 0.09em tracking in slate-400 measured ~3.2:1 and smeared. The label
+   is what makes the number mean anything — it gets a legible size and ~6.5:1. */
 .ps__uptallyi .caps {
-  color: var(--c-slate-400);
-  font-size: 8.5px;
+  color: var(--c-slate-300);
+  font-size: 10px;
+  letter-spacing: 0.06em;
   text-align: center;
 }
 
+/**
+ * Two assurances, side by side, under the price — not four stacked bullets
+ * restating the tally and the body copy above them.
+ */
 .ps__uplist {
   position: relative;
   list-style: none;
-  margin: var(--sp-4) 0;
+  margin: var(--sp-3) 0 0;
   padding: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px var(--sp-3);
 }
 
 .ps__uplist li {
   display: flex;
-  align-items: center;
-  gap: 9px;
-  font: var(--t-body-sm);
-  color: var(--c-slate-200);
+  align-items: flex-start;
+  gap: 7px;
+  font: var(--t-micro);
+  font-weight: 500;
+  line-height: 1.35;
+  color: var(--c-slate-300);
 }
 
 .ps__uplist .r-ic {
   flex: none;
-  color: var(--c-good);
+  margin-top: 1px;
+  color: rgba(217, 169, 58, 0.8);
 }
 
 .ps__offers {
@@ -1808,14 +2157,21 @@
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: var(--sp-3);
+  margin-top: var(--sp-4);
 }
 
+/**
+ * Both cards share one grid: ribbon row, name, price, blurb. The non-bundle
+ * card renders the same ribbon element with `visibility: hidden`, so the two
+ * prices land on the same baseline instead of 11px apart.
+ */
 .ps__offer {
   position: relative;
-  display: flex;
-  flex-direction: column;
-  gap: 5px;
-  padding: var(--sp-4) var(--sp-3) var(--sp-3);
+  display: grid;
+  grid-template-rows: auto auto 1fr;
+  align-content: start;
+  row-gap: 5px;
+  padding: 28px var(--sp-3) var(--sp-3);
   border-radius: var(--r-md);
   text-align: left;
   background: linear-gradient(180deg, rgba(255, 255, 255, 0.1), rgba(255, 255, 255, 0.03));
@@ -1828,12 +2184,12 @@
 }
 
 .ps__offer.is-bundle {
-  /* Room for the ribbon so it never sits on top of the offer's name. */
-  padding-top: 27px;
-  background: linear-gradient(180deg, rgba(217, 169, 58, 0.2), rgba(217, 169, 58, 0.05));
+  background: linear-gradient(180deg, rgba(217, 169, 58, 0.18), rgba(217, 169, 58, 0.04));
   box-shadow: inset 0 0 0 1px var(--line-gold), var(--e-2);
 }
 
+/* Tinted plate, not a filled gold ribbon — it labels the better deal, it is not
+   the thing to tap. */
 .ps__offertag {
   position: absolute;
   top: 0;
@@ -1843,8 +2199,13 @@
   font-size: 9px;
   text-align: center;
   border-radius: var(--r-md) var(--r-md) 0 0;
-  color: var(--c-void);
-  background: var(--grad-gold);
+  color: var(--c-gold-200);
+  background: rgba(217, 169, 58, 0.16);
+  box-shadow: inset 0 -1px 0 var(--line-gold);
+}
+
+.ps__offer:not(.is-bundle) .ps__offertag {
+  visibility: hidden;
 }
 
 .ps__offername {
@@ -1866,11 +2227,13 @@
 }
 
 .ps__offerblurb {
+  align-self: start;
   font: var(--t-micro);
+  font-weight: 500;
   text-transform: none;
   letter-spacing: 0;
   line-height: 1.4;
-  color: var(--c-slate-400);
+  color: var(--c-slate-300);
 }
 
 .ps__activerow {
@@ -2020,10 +2383,12 @@
   box-shadow: inset 0 0 0 1px var(--line-gold);
 }
 
+/* "You are here" — flat gold plate, no metal gradient and no bloom. The ring
+   in the tier card is the one that gets the full material. */
 .ps__col.is-current .ps__markern {
-  color: var(--c-void);
-  background: var(--grad-gold);
-  box-shadow: var(--e-gold);
+  color: #241803;
+  background: var(--c-gold-400);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.4);
   transform: scale(1.12);
 }
 
@@ -2136,9 +2501,14 @@
   pointer-events: none;
 }
 
+/**
+ * Locked, not hidden. This track is the first thing on the screen now, so the
+ * art has to survive the state — the diagonal hatch and the dimmed plate say
+ * "not yours yet" while the object stays legible enough to want.
+ */
 .ps__cell.is-locked {
-  opacity: 0.44;
-  filter: saturate(0.35);
+  opacity: 0.66;
+  filter: saturate(0.62);
 }
 
 .ps__cell.is-premlocked.is-locked .ps__cellstate {
@@ -2182,9 +2552,14 @@
   transform: rotate(-45deg);
 }
 
+/**
+ * Claimable cells hold a lit edge and a warm bloom — a state, not a loop. The
+ * old `cellPulse … infinite` meant up to a dozen cells breathing at once behind
+ * the CTA; the material says "ready" without any of them moving.
+ */
 .ps__cell.is-claimable {
   background: linear-gradient(180deg, rgba(58, 48, 22, 0.9), rgba(18, 17, 22, 0.94));
-  animation: cellPulse 2.4s var(--ease-in-out) infinite;
+  transform: translate3d(0, -2px, 0);
 }
 
 .ps__cell.is-claimable .ps__celledge {
@@ -2199,14 +2574,8 @@
   background: radial-gradient(40% 40% at 50% 50%, rgba(237, 201, 107, 0.24), transparent 70%);
 }
 
-@keyframes cellPulse {
-  0%,
-  100% {
-    transform: translate3d(0, 0, 0) scale(1);
-  }
-  50% {
-    transform: translate3d(0, -2px, 0) scale(1.02);
-  }
+.ps__cell.is-claimable.is-press {
+  transform: translate3d(0, -2px, 0) scale(0.94);
 }
 
 /* ═══════════════════════════════════════════════════════════════════
@@ -2217,8 +2586,13 @@
   margin-bottom: var(--sp-3);
 }
 
+/* "Hot" is a state, not a loop: a lit hairline and a warm label, no pulse. */
 .ps__chclaim.is-hot {
-  animation: claimPulse 2.4s var(--ease-in-out) infinite;
+  color: var(--c-gold-200);
+  box-shadow:
+    var(--e-2),
+    inset 0 1px 0 rgba(255, 255, 255, 0.12),
+    inset 0 0 0 1px var(--line-gold);
 }
 
 .ps__chlist {
@@ -2267,7 +2641,7 @@
 
 .ps__chdetail {
   font: var(--t-body-sm);
-  color: var(--c-slate-400);
+  color: var(--c-slate-300);
 }
 
 .ps__chprog {
@@ -2292,7 +2666,12 @@
   gap: 7px;
   margin: var(--sp-3) 0 0;
   font: var(--t-body-sm);
-  color: var(--c-slate-400);
+  color: var(--c-slate-300);
+}
+
+/* Fine print is quiet, but it is still text a player has to be able to read. */
+.ps__legal {
+  color: var(--c-slate-300);
 }
 
 .ps__chnote .r-ic {
@@ -2776,6 +3155,19 @@
     grid-template-columns: minmax(0, 1fr);
   }
 
+  /* Stacked, the empty ribbon row is dead space rather than an alignment aid. */
+  .ps__offer:not(.is-bundle) {
+    padding-top: var(--sp-4);
+  }
+
+  .ps__offer:not(.is-bundle) .ps__offertag {
+    display: none;
+  }
+
+  .ps__uplist {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
   .ps__col {
     width: 72px;
   }
@@ -2799,10 +3191,8 @@
 @media (prefers-reduced-motion: reduce) {
   .st__herobeam,
   .ps__cardshine,
+  .is-in .ps__cardshine,
   .ec-tile.is-shiny .ec-tile__sheen,
-  .ps__cell.is-claimable,
-  .ps__claimall.is-hot,
-  .ps__chclaim.is-hot,
   .ec-reveal__rays i {
     animation: none;
   }

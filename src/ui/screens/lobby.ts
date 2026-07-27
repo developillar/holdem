@@ -27,7 +27,7 @@ import { SectionHeader } from '../components/surface.ts';
 import { Skeleton } from '../components/skeleton.ts';
 import { icon } from '../components/icons.ts';
 import { haptic, pressFeedback, reduceMotion } from '../components/util.ts';
-import { cash, createLobbyFeed, compactCount, greeting } from '../lobby/data.ts';
+import { cash, createLobbyFeed, fmtCount, greeting } from '../lobby/data.ts';
 import type { LobbyFeed, LobbySnapshot } from '../lobby/data.ts';
 import { BannerCarousel } from '../lobby/banner.ts';
 import { ModeSelector } from '../lobby/modecard.ts';
@@ -92,6 +92,18 @@ export interface LobbyInstance {
 }
 
 export function mount(container: HTMLElement): LobbyInstance {
+  // The lobby is an off-table route, and base.css is explicit that the felt
+  // must not bleed through one. The shell's own stage toggle early-outs on the
+  // boot path (it is asked to hide a canvas it already believes is hidden), so
+  // the class never lands and the table composites straight up through the
+  // middle of this screen. Claim it here, synchronously, before the first
+  // paint of the screen rather than on a transition end — `.is-hidden` also
+  // carries `visibility: hidden` now, so there is no frame in which a
+  // half-faded felt can leak. Deliberately not undone on unmount: the shell
+  // clears it when the table route opens, and dropping it early would show a
+  // frame of felt during the outgoing transition.
+  document.getElementById('stage')?.classList.add('is-hidden');
+
   const root = h('div', { class: 'lb scroll' });
   const aura = h('div', { class: 'lb__aura', 'aria-hidden': 'true' });
   const inner = h('div', { class: 'lb__inner' });
@@ -403,7 +415,7 @@ export function mount(container: HTMLElement): LobbyInstance {
     cleanups.push(
       feed.subscribe((s) => {
         latest = s;
-        onlineN.textContent = compactCount(s.totalPlayers);
+        onlineN.textContent = fmtCount(s.totalPlayers);
         paintFrom(s);
       }),
     );

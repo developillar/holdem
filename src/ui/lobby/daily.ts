@@ -38,18 +38,33 @@ export interface DailyEl extends HTMLElement {
 interface Reward {
   kind: 'chips' | 'gems' | 'ticket';
   amount: number;
-  label: string;
+  /**
+   * The unit, shown in micro-caps under the value. Without it `12` and `500`
+   * read as comparable magnitudes when one is gems and the other chips.
+   */
+  unit: string;
 }
 
+/**
+ * One numeric convention across all seven tiles: grouped integers, no
+ * abbreviation. The old row mixed `500`/`900`/`12`/`25` with `1.8K`/`3.5K`,
+ * which made `900` optically outrank `1.8K` — it told the player the wrong
+ * thing about which day pays more.
+ */
 const REWARDS: Reward[] = [
-  { kind: 'chips', amount: 500, label: '500' },
-  { kind: 'chips', amount: 900, label: '900' },
-  { kind: 'gems', amount: 12, label: '12' },
-  { kind: 'chips', amount: 1800, label: '1.8K' },
-  { kind: 'gems', amount: 25, label: '25' },
-  { kind: 'chips', amount: 3500, label: '3.5K' },
-  { kind: 'ticket', amount: 1, label: 'SNG ticket' },
+  { kind: 'chips', amount: 500, unit: 'chips' },
+  { kind: 'chips', amount: 900, unit: 'chips' },
+  { kind: 'gems', amount: 12, unit: 'gems' },
+  { kind: 'chips', amount: 1800, unit: 'chips' },
+  { kind: 'gems', amount: 25, unit: 'gems' },
+  { kind: 'chips', amount: 3500, unit: 'chips' },
+  { kind: 'ticket', amount: 1, unit: 'SNG ticket' },
 ];
+
+/** "500 chips" / "1,800 chips" / "1 SNG ticket" — same formatter everywhere. */
+function rewardText(r: Reward): string {
+  return `${fmtInt(r.amount)} ${r.unit}`;
+}
 
 function localDayIndex(d = new Date()): number {
   return d.getFullYear() * 10000 + (d.getMonth() + 1) * 100 + d.getDate();
@@ -109,11 +124,12 @@ export function DailyStrip(): DailyEl {
   const streakWord = h('span', null, '-day streak');
   const countdown = h('span', { class: 'dl__count tnum' }, '');
   const tiles: HTMLElement[] = [];
-  const track = h('div', { class: 'dl__track' });
+  const track = h('div', { class: 'dl__track', role: 'list', 'aria-label': 'Seven-day reward run' });
 
   const cta = h(
     'button',
     { class: 'dl__cta', type: 'button' },
+    h('span', { class: 'dl__ctagrain', 'aria-hidden': 'true' }),
     h('span', { class: 'dl__ctasheen', 'aria-hidden': 'true' }),
     h('span', { class: 'dl__ctat' }, 'Claim'),
   );
@@ -141,15 +157,42 @@ export function DailyStrip(): DailyEl {
     const r = REWARDS[i];
     const tile = h(
       'div',
-      { class: `dl__tile${i === 6 ? ' dl__tile--jackpot' : ''}`, style: { '--i': String(i) } },
+      {
+        class: `dl__tile${i === 6 ? ' dl__tile--jackpot' : ''}`,
+        style: { '--i': String(i) },
+        // Without a role the label is dropped by most AT; with it the tile
+        // announces the pair rather than a bare "500".
+        role: 'listitem',
+        'aria-label': `Day ${i + 1} — ${rewardText(r)}`,
+      },
       h('span', { class: 'dl__day caps' }, `Day ${i + 1}`),
       h('span', { class: 'dl__ic', 'aria-hidden': 'true' }, rewardGlyph(r, i === 6 ? 24 : 19)),
-      h('span', { class: `dl__amt${r.kind === 'ticket' ? ' dl__amt--sm' : ' tnum'}` }, r.label),
+      h('span', { class: 'dl__amt tnum' }, fmtInt(r.amount)),
+      h('span', { class: 'dl__unit' }, r.unit),
       h('span', { class: 'dl__stamp', 'aria-hidden': 'true' }, icon('check', { size: 14, stroke: 3.2 })),
     );
     tiles.push(tile);
     track.appendChild(tile);
   }
+
+  // Which edge of the strip is still holding content back. The mask follows,
+  // so the run never fades out at an edge you have already reached.
+  let edgeQueued = false;
+  const syncEdges = (): void => {
+    if (edgeQueued) return;
+    edgeQueued = true;
+    requestAnimationFrame(() => {
+      edgeQueued = false;
+      const max = track.scrollWidth - track.clientWidth;
+      if (max <= 1) {
+        track.dataset.edge = 'end';
+        return;
+      }
+      track.dataset.edge =
+        track.scrollLeft <= 1 ? 'start' : track.scrollLeft >= max - 1 ? 'end' : 'mid';
+    });
+  };
+  track.addEventListener('scroll', syncEdges, { passive: true });
 
   function paint(): void {
     const isClaimed = claimed();
@@ -176,7 +219,7 @@ export function DailyStrip(): DailyEl {
     const r = REWARDS[Math.min(6, activeIdx)];
     cta.querySelector('.dl__ctat')!.textContent = isClaimed
       ? 'Claimed today'
-      : `Claim day ${state.day} · ${r.label}${r.kind === 'chips' ? ' chips' : r.kind === 'gems' ? ' gems' : ''}`;
+      : `Claim day ${state.day} · ${rewardText(r)}`;
     cta.disabled = isClaimed;
     // Bring the active tile into view without yanking the page.
     const target = tiles[Math.min(6, activeIdx)];
@@ -184,6 +227,7 @@ export function DailyStrip(): DailyEl {
       const left = target.offsetLeft - track.clientWidth / 2 + target.offsetWidth / 2;
       track.scrollTo({ left: Math.max(0, left), behavior: 'auto' });
     }
+    syncEdges();
   }
 
   cta.addEventListener('click', () => {
@@ -208,12 +252,7 @@ export function DailyStrip(): DailyEl {
     if (r.kind === 'chips') creditBankroll(r.amount);
     bus.emit('fx:burst', { kind: 'confetti' });
     bus.emit('ui:toast', {
-      text:
-        r.kind === 'chips'
-          ? `Day ${idx + 1} claimed — ${fmtInt(r.amount)} chips`
-          : r.kind === 'gems'
-            ? `Day ${idx + 1} claimed — ${r.amount} gems`
-            : `Day ${idx + 1} claimed — Sit & Go ticket`,
+      text: `Day ${idx + 1} claimed — ${rewardText(r)}`,
       tone: 'epic',
       ms: 2600,
     });
@@ -230,10 +269,13 @@ export function DailyStrip(): DailyEl {
   };
 
   el.dispose = () => {
-    /* the lobby owns the interval that calls tick() */
+    track.removeEventListener('scroll', syncEdges);
   };
 
   paint();
   el.tick();
+  // The track has no width until it is in the document; re-read the edges once
+  // layout exists so the strip does not start life masked at both ends.
+  requestAnimationFrame(syncEdges);
   return el;
 }

@@ -9,7 +9,7 @@
  */
 
 import { bus } from '../../core/bus.ts';
-import { clamp, cls, cue, h, haptic, setText } from './dom.ts';
+import { clamp, cls, cue, h, haptic, press, setText } from './dom.ts';
 import { icon } from './icons.ts';
 
 export interface Sheet {
@@ -90,10 +90,15 @@ export function createSheet(opts: SheetOptions = {}): Sheet {
   scrim.addEventListener('pointerdown', () => {
     if (dismissible) api.close();
   });
-  closeBtn.addEventListener('click', () => api.close());
+  // Every other control in a sheet routes through `press()` — one haptic, one
+  // cue, a reliable pressed state. The dismiss control gets the same, rather
+  // than a bare `click` plus a CSS `:active` that iOS Safari fires unreliably.
+  press(closeBtn, { haptic: 'select', sfx: 'tapSecondary', onPress: () => api.close() });
 
   if (dismissible) {
     header.addEventListener('pointerdown', (e: PointerEvent) => {
+      // The close button owns its own pointer; a press there is not a drag.
+      if ((e.target as HTMLElement | null)?.closest('.sheet__x')) return;
       dragging = true;
       startY = e.clientY;
       lastY = e.clientY;

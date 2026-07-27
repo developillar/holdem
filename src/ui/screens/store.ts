@@ -30,16 +30,41 @@ import { fmtInt, haptic, pressFeedback, reduceMotion } from '../components/util.
 import {
   CATALOG, KIND_META, KIND_ORDER, RARITY_META, featuredToday, spotlightToday,
 } from '../../data/catalog.ts';
-import { collectionProgress, equippedId, gems, isPremium, onWallet, owns } from '../../econ/wallet.ts';
+import { collectionProgress, equippedId, isPremium, onWallet, owns } from '../../econ/wallet.ts';
 import { countdown, passState, trackContents } from '../../econ/pass.ts';
 import { previewNode } from '../econ/preview.ts';
 import { ItemTile } from '../econ/tile.ts';
 import type { ItemTileEl } from '../econ/tile.ts';
-import { GemBalance, openItemSheet } from '../econ/detail.ts';
+import { openItemSheet } from '../econ/detail.ts';
 import { GemShelf } from '../econ/bundles.ts';
 
 const TAB_KEY = 'royale.store-tab';
 const RARITY_RANK: Record<string, number> = { mythic: 0, legendary: 1, epic: 2, rare: 3, common: 4 };
+
+/** Circumference of the collection ring, r = 12.4 in its 30×30 viewBox. */
+const RING_C = 2 * Math.PI * 12.4;
+
+/**
+ * Hero art direction, per category.
+ *
+ * The hero stage is a *fixed* frame — the card's geometry no longer follows
+ * whatever the day's item happens to be. Each preview is then sized so the
+ * drawn art, not the transparent margin around it, fills that frame: a chip
+ * stack only paints the middle ~57% of its square canvas, an avatar paints
+ * 100% of it, so the two need very different `size` values to land on the same
+ * optical height. `stage` overrides the frame for art that is inherently short
+ * (a title is a single plate — a 152px box around it would be a hole).
+ */
+const HERO_ART: Record<CosmeticKind, { size: number; stage?: number }> = {
+  avatar: { size: 138 },
+  frame: { size: 144 },
+  'card-back': { size: 148 },
+  'chip-set': { size: 232 },
+  emote: { size: 196 },
+  title: { size: 232, stage: 104 },
+  'table-skin': { size: 136 },
+  felt: { size: 136 },
+};
 
 function readTab(): CosmeticKind {
   try {
@@ -89,11 +114,44 @@ export function mount(container: HTMLElement): StoreInstance {
   };
 
   // ── header ─────────────────────────────────────────────────────────
-  const balance = GemBalance({
-    onTap: () => shelfSec.scrollIntoView({ behavior: reduceMotion() ? 'auto' : 'smooth', block: 'center' }),
+  /**
+   * Exactly one gem readout per screen, and it is the shell's top bar — the
+   * store does not draw a second one 44px underneath it. The header's right
+   * slot carries collection progress instead: still a number, still a pill,
+   * but a different question ("how much of this do I own?") with a different
+   * affordance, so the eye is never asked to read the same figure twice.
+   */
+  const ringFill = h('circle', {
+    class: 'st__collarc',
+    attrs: {
+      cx: 15, cy: 15, r: 12.4, fill: 'none',
+      'stroke-width': 3.1, 'stroke-linecap': 'round',
+      'stroke-dasharray': RING_C.toFixed(2),
+      'stroke-dashoffset': RING_C.toFixed(2),
+      transform: 'rotate(-90 15 15)',
+    },
   });
-
-  const collectionMeter = h('span', { class: 'st__coll tnum' });
+  const collOwned = h('b', null, '0');
+  const collTotal = h('i', null, '/0');
+  const collectionMeter = h(
+    'div',
+    { class: 'st__coll', role: 'img', 'aria-label': 'Collection progress' },
+    h(
+      'svg',
+      { class: 'st__collring', attrs: { viewBox: '0 0 30 30', 'aria-hidden': 'true' } },
+      h('circle', {
+        class: 'st__colltrack',
+        attrs: { cx: 15, cy: 15, r: 12.4, fill: 'none', 'stroke-width': 3.1 },
+      }),
+      ringFill,
+    ),
+    h(
+      'span',
+      { class: 'st__colltext' },
+      h('span', { class: 'st__collnum tnum' }, collOwned, collTotal),
+      h('span', { class: 'st__colllabel' }, 'Collected'),
+    ),
+  );
 
   const header = h(
     'header',
@@ -103,14 +161,15 @@ export function mount(container: HTMLElement): StoreInstance {
       { class: 'st__headtext' },
       h('span', { class: 'st__eyebrow caps' }, 'Royale store'),
       h('h1', { class: 'st__title' }, 'Collection'),
-      collectionMeter,
     ),
-    balance,
+    collectionMeter,
   );
 
   // ── featured hero ──────────────────────────────────────────────────
   const hero = featuredToday();
   const heroTimer = h('span', { class: 'st__herotime tnum' });
+  const heroArt = HERO_ART[hero.kind];
+  const heroWide = hero.kind === 'table-skin' || hero.kind === 'felt';
 
   const heroCta = Button({
     label: owns(hero.id) ? 'View' : 'Get it',
@@ -135,10 +194,13 @@ export function mount(container: HTMLElement): StoreInstance {
     h('span', { class: 'st__heroedge', 'aria-hidden': 'true' }),
     h(
       'span',
-      { class: 'st__herostage' },
+      {
+        class: 'st__herostage',
+        style: heroArt.stage ? { '--stage-h': `${heroArt.stage}px` } : undefined,
+      },
       previewNode(hero, {
-        size: hero.kind === 'table-skin' || hero.kind === 'felt' ? 152 : 168,
-        hero: hero.kind === 'table-skin' || hero.kind === 'felt',
+        size: heroArt.size,
+        hero: heroWide,
         avatarId: myAvatar(),
         animate: true,
       }),
@@ -149,7 +211,7 @@ export function mount(container: HTMLElement): StoreInstance {
       h(
         'span',
         { class: 'st__herotop' },
-        h('span', { class: 'st__herotag caps' }, 'Featured today'),
+        h('span', { class: 'st__herotag' }, 'Featured today'),
         heroTimer,
       ),
       h('span', { class: 'st__heroname' }, hero.name),
@@ -164,13 +226,30 @@ export function mount(container: HTMLElement): StoreInstance {
   });
 
   // ── spotlight rail ─────────────────────────────────────────────────
-  const spotlight = spotlightToday();
+  /**
+   * Ranked, not shuffled: the rarest piece leads the rail at half again the
+   * width of its neighbours, with its rarity named and its price set larger.
+   * A rail of identical tiles reads as a row of slots regardless of what is in
+   * them — the size step is what makes a rarity-mixed rail look mixed.
+   */
+  const spotlight = spotlightToday()
+    .slice()
+    .sort((a, b) => RARITY_RANK[a.rarity] - RARITY_RANK[b.rarity]);
   const spotRail = h(
     'div',
     { class: 'st__spotrail scroll' },
     ...spotlight.map((item, i) => {
-      const tile = ItemTile({ item, size: 84, index: i, avatarId: myAvatar(), onTap: openItem });
+      const lead = i === 0;
+      const tile = ItemTile({
+        item,
+        size: lead ? 102 : 84,
+        index: i,
+        avatarId: myAvatar(),
+        emphasis: lead,
+        onTap: openItem,
+      });
       tile.classList.add('st__spot');
+      if (lead) tile.classList.add('st__spot--lead');
       tiles.push(tile);
       return tile;
     }),
@@ -322,7 +401,11 @@ export function mount(container: HTMLElement): StoreInstance {
     meterFill.style.transform = `scaleX(${pct.toFixed(4)})`;
     meterText.textContent = `${owned}/${total}`;
     const all = collectionProgress();
-    collectionMeter.textContent = `${all.owned} of ${all.total} items owned`;
+    const ringPct = all.total > 0 ? all.owned / all.total : 0;
+    ringFill.setAttribute('stroke-dashoffset', (RING_C * (1 - ringPct)).toFixed(2));
+    collOwned.textContent = String(all.owned);
+    collTotal.textContent = `/${all.total}`;
+    collectionMeter.setAttribute('aria-label', `${all.owned} of ${all.total} items owned`);
   }
 
   function setKind(next: CosmeticKind): void {
@@ -339,8 +422,9 @@ export function mount(container: HTMLElement): StoreInstance {
   }
 
   function refreshAll(): void {
+    // The gem number itself is the top bar's job — it self-syncs off the
+    // `econ:wallet` event, so there is nothing to push here.
     for (const t of tiles) t.refresh();
-    balance.setValue(gems());
     paintMeter();
     const ownedHero = owns(hero.id);
     heroCta.setLabel(ownedHero ? 'View' : 'Get it');

@@ -80,7 +80,9 @@ export function MiniCard(card: CardId | null, opts: MiniCardOpts = {}): HTMLElem
         h('span', { class: cx('mc__rank', rankLabel(c).length > 1 && 'is-wide') }, rankLabel(c)),
         h('span', { class: 'mc__cpip' }, suitPip(suit, Math.round(size * 0.27))),
       ),
-      h('span', { class: 'mc__ghostpip' }, suitPip(suit, Math.round(size * 0.62))),
+      // A watermark, not a second pip. At 0.62 it matched the corner pip's
+      // optical weight on a 90px card and read as a duplicated element.
+      h('span', { class: 'mc__ghostpip' }, suitPip(suit, Math.round(size * 0.42))),
       h('span', { class: 'mc__gloss' }),
     ),
   );
@@ -186,8 +188,11 @@ export function HandSnapshot(replay: HandReplay, opts: SnapshotOpts = {}): HTMLE
   const dense = !!opts.dense;
 
   const omaha = replay.variant === 'plo4';
+  // The hole cards stay the larger pair — they are the hero — but the gap is
+  // kept small so the two rows share a top edge to within a couple of px once
+  // the grid below puts them on the same row.
   const holeSize = dense ? 26 : omaha ? 28 : 34;
-  const boardSize = dense ? 24 : omaha ? 26 : 30;
+  const boardSize = dense ? 25 : omaha ? 26 : 32;
 
   const wentToShowdown = replay.results.filter((r) => r.rank).length >= 2;
   const winner = replay.results.slice().sort((a, b) => b.won - a.won)[0] ?? null;
@@ -200,29 +205,35 @@ export function HandSnapshot(replay: HandReplay, opts: SnapshotOpts = {}): HTMLE
     'div',
     { class: cx('hsnap', dense && 'is-dense', lost && 'is-lost', opts.class) },
     h('span', { class: 'hsnap__grain', 'aria-hidden': 'true' }),
+    // One grid, not two stacked columns. HOLE and BOARD are peer labels, so
+    // they occupy the same grid row and share a baseline; the two card rows
+    // occupy the second row and share a top edge. Stacking them as separate
+    // flex columns made both alignments drift with the card-size difference —
+    // the one visible layout break on the card.
     h(
       'div',
       { class: 'hsnap__cards' },
-      h(
-        'div',
-        { class: 'hsnap__group hsnap__group--hole' },
-        h('span', { class: 'hsnap__cap caps' }, hole.length > 2 ? 'Hand' : 'Hole'),
-        hole.length
-          ? MiniHand(hole, { size: holeSize, fan: !omaha, highlight: winning })
-          : h(
-              'span',
-              { class: 'mcrow mcrow--hole' },
-              MiniCard(null, { size: holeSize, down: true }),
-              MiniCard(null, { size: holeSize, down: true }),
-            ),
-      ),
+      h('span', { class: 'hsnap__cap hsnap__cap--hole caps' }, hole.length > 2 ? 'Hand' : 'Hole'),
       h('span', { class: 'hsnap__div', 'aria-hidden': 'true' }),
-      h(
-        'div',
-        { class: 'hsnap__group hsnap__group--board' },
-        h('span', { class: 'hsnap__cap caps' }, 'Board'),
-        MiniBoard(replay.board, { size: boardSize, highlight: winning }),
-      ),
+      h('span', { class: 'hsnap__cap hsnap__cap--board caps' }, 'Board'),
+      hole.length
+        ? MiniHand(hole, {
+            size: holeSize,
+            fan: !omaha,
+            highlight: winning,
+            class: 'hsnap__row hsnap__row--hole',
+          })
+        : h(
+            'span',
+            { class: 'mcrow mcrow--hole hsnap__row hsnap__row--hole' },
+            MiniCard(null, { size: holeSize, down: true }),
+            MiniCard(null, { size: holeSize, down: true }),
+          ),
+      MiniBoard(replay.board, {
+        size: boardSize,
+        highlight: winning,
+        class: 'hsnap__row hsnap__row--board',
+      }),
     ),
     h(
       'div',

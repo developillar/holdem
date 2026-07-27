@@ -105,10 +105,58 @@
   width: 100%;
 }
 
+/* The All / Friends / Big wins / Bad beats control is how the whole screen is
+   operated, and `.r-seg--sm` paints a 34px segment body. The painted well keeps
+   its height — growing it would push the first card below the fold — while a
+   transparent ::after lifts each segment's target to the 44px floor. Segments
+   are edge-to-edge siblings, so the targets tile rather than overlap.
+   Scoped to `.feed__seg` on purpose: components.css is shared chrome. */
+.feed__seg .r-seg__b {
+  position: relative;
+}
+
+.feed__seg .r-seg__b::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 50%;
+  height: var(--hit);
+  transform: translateY(-50%);
+}
+
 .feed__scroll {
   position: relative;
   flex: 1 1 auto;
   overscroll-behavior-y: contain;
+}
+
+/* ── tab-bar hem ─────────────────────────────────────────────────────
+   The tab bar is a translucent blurred mat, and a blurred gold chip is still
+   a gold chip: without this the next card's money pill and its HOLE/BOARD
+   captions were fully legible behind the Play/Feed/Store labels, with a hard
+   seam on the line where the blur began.
+
+   A near-opaque floor behind the bar plus a 44px fade above it drops anything
+   underneath below readable contrast and removes the seam entirely. Painted
+   above the scroller, below the nav (z 30) and below the header (z 3 in its
+   own flex order), and never interactive. */
+.feed__hem {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 2;
+  height: calc(var(--chrome-b, 0px) + 44px);
+  background: linear-gradient(
+    to top,
+    rgba(6, 8, 14, 0.97) 0%,
+    rgba(6, 8, 14, 0.97) calc(100% - 44px),
+    rgba(6, 8, 14, 0.74) calc(100% - 26px),
+    rgba(6, 8, 14, 0.32) calc(100% - 12px),
+    rgba(6, 8, 14, 0) 100%
+  );
+  pointer-events: none;
 }
 
 .feed__content {
@@ -207,6 +255,18 @@
     opacity var(--d-fast) var(--ease-out),
     transform var(--d-base) var(--ease-spring);
   pointer-events: none;
+}
+
+.feed__pill::after {
+  content: '';
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  width: 100%;
+  min-width: var(--hit);
+  height: var(--hit);
+  border-radius: var(--r-pill);
 }
 
 .feed__pill.is-on {
@@ -334,32 +394,59 @@
   padding: var(--sp-4) var(--sp-4) var(--sp-3);
 }
 
-/* ── tiers ───────────────────────────────────────────────── */
+/* ── tiers ───────────────────────────────────────────────────────────
+   The ladder is neutral → teal → gold, and every rung is *earned*:
+   `visualTier()` in ui/feed/util.ts re-gates the model's importance score
+   so roughly 58% of the list is plain, 27% rare, 12% epic, 3% legendary.
 
-.post--rare .post__rim {
-  background: linear-gradient(165deg, rgba(122, 176, 255, 0.4), rgba(255, 255, 255, 0.05) 46%, rgba(122, 176, 255, 0.16));
+   Only two hues appear, and both already exist on this screen: teal is the
+   felt/live-economy green, gold is the currency. Nothing is introduced that
+   relates to nothing else. The tiers separate by *material* — rim thickness,
+   an inner bevel, elevation — not only by colour, so the ladder still reads
+   in greyscale.
+
+   Local tier values (deliberately not in tokens.css: they are the feed's
+   rarity ramp, not a global surface colour). */
+.post {
+  --tier-teal: 94, 234, 212;
+  --tier-teal-deep: 45, 212, 191;
 }
 
+.post--rare .post__rim {
+  padding: 1px;
+  background: linear-gradient(
+    165deg,
+    rgba(226, 236, 250, 0.34),
+    rgba(255, 255, 255, 0.05) 46%,
+    rgba(226, 236, 250, 0.11)
+  );
+}
+
+/* Epic: a 1.5px teal rim, brightest along the top-left where the room's
+   light comes from, plus a hairline bevel just inside it so the edge has
+   thickness instead of being a drawn line. */
 .post--epic {
   box-shadow:
     var(--e-2),
-    0 0 0 1px rgba(167, 139, 250, 0.1),
-    0 10px 40px rgba(139, 92, 246, 0.16);
+    0 0 0 1px rgba(var(--tier-teal-deep), 0.09),
+    0 10px 40px rgba(var(--tier-teal-deep), 0.14);
 }
 
 .post--epic .post__rim {
+  padding: 1.5px;
   background: linear-gradient(
     160deg,
-    rgba(196, 165, 255, 0.85),
-    rgba(139, 92, 246, 0.42) 38%,
-    rgba(255, 255, 255, 0.06) 62%,
-    rgba(167, 139, 250, 0.55)
+    rgba(var(--tier-teal), 0.72),
+    rgba(255, 255, 255, 0.05) 46%,
+    rgba(var(--tier-teal-deep), 0.2)
   );
 }
 
 .post--epic .post__inner {
-  background: radial-gradient(120% 70% at 50% -10%, rgba(139, 92, 246, 0.12), transparent 62%);
+  background:
+    radial-gradient(120% 62% at 50% -12%, rgba(var(--tier-teal-deep), 0.09), transparent 60%);
   border-radius: inherit;
+  box-shadow: inset 0 0 0 1px rgba(var(--tier-teal), 0.07);
 }
 
 .post--legendary {
@@ -367,6 +454,10 @@
     var(--e-3),
     0 0 0 1px rgba(217, 169, 58, 0.13),
     0 12px 44px rgba(217, 169, 58, 0.18);
+}
+
+.post--legendary .post__rim {
+  padding: 1.5px;
 }
 
 .post--legendary .post__rim {
@@ -500,7 +591,9 @@
 .post__badge--quads,
 .post__badge--straight-flush { color: var(--c-gold-200); box-shadow: inset 0 0 0 1px var(--line-gold); background: rgba(217, 169, 58, 0.1); }
 .post__badge--royal { color: #2a1f04; background: var(--grad-gold-soft); box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.45); }
-.post__badge--bluff { color: #d9c8ff; box-shadow: inset 0 0 0 1px rgba(167, 139, 250, 0.28); background: rgba(167, 139, 250, 0.1); }
+/* Bluff used to be violet — a hue that related to nothing else on the screen.
+   It is a "kind" label, not a rarity, so it takes the cool neutral. */
+.post__badge--bluff { color: var(--c-slate-100); box-shadow: inset 0 0 0 1px var(--line-2); background: rgba(226, 236, 250, 0.07); }
 .post__badge--sng-win { color: var(--c-gold-200); background: rgba(217, 169, 58, 0.12); box-shadow: inset 0 0 0 1px var(--line-gold); }
 .post__badge--big-win,
 .post__badge--bomb-pot { color: #9ff0cd; box-shadow: inset 0 0 0 1px rgba(52, 211, 153, 0.22); background: rgba(52, 211, 153, 0.09); }
@@ -577,26 +670,58 @@
   transform: scale(0.985);
 }
 
+/* The card's primary action. It used to be micro-caps in slate-400 whose gold
+   only appeared on :hover — a state a finger never reaches before the tap has
+   already happened — which left it rendering dimmer than the timestamp above
+   it. Now it is a real 44px button body carrying the gold in its rest state,
+   so the eye lands on it after the cards and before the reaction row. */
 .post__watch {
+  position: relative;
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 4px;
-  margin-top: 7px;
+  gap: 6px;
+  height: 44px;
+  margin-top: var(--sp-2);
+  border-radius: var(--r-pill);
+  overflow: hidden;
+  background: linear-gradient(180deg, rgba(237, 201, 107, 0.14), rgba(237, 201, 107, 0.05));
+  box-shadow:
+    inset 0 0 0 1px rgba(237, 201, 107, 0.28),
+    inset 0 1px 0 rgba(255, 255, 255, 0.1),
+    0 1px 2px rgba(3, 5, 10, 0.4);
   font: var(--t-micro);
+  font-size: 11px;
   text-transform: uppercase;
   letter-spacing: var(--ls-caps);
-  color: var(--c-slate-400);
+  color: var(--c-gold-200);
 }
 
-.post__snap:active .post__watch,
-.post__snap:hover .post__watch {
-  color: var(--c-gold-300);
+/* Press brightening as an opacity fade rather than `filter: brightness()` —
+   same read, but it stays on the compositor (house rule: transform/opacity). */
+.post__watch::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(180deg, rgba(246, 224, 160, 0.2), rgba(237, 201, 107, 0.08));
+  opacity: 0;
+  transition: opacity var(--d-fast) var(--ease-out);
+  pointer-events: none;
+}
+
+.post__snap:active .post__watch::before { opacity: 1; }
+
+.post__watcht {
+  position: relative;
+  z-index: 1;
 }
 
 .post__watchc {
+  position: relative;
+  z-index: 1;
   display: grid;
   place-items: center;
+  opacity: 0.75;
   transition: transform var(--d-fast) var(--ease-out);
 }
 
@@ -735,9 +860,9 @@
 
 .mc__ghostpip {
   position: absolute;
-  right: calc(var(--mcw) * -0.06);
-  bottom: calc(var(--mcw) * -0.02);
-  opacity: 0.16;
+  right: calc(var(--mcw) * 0.06);
+  bottom: calc(var(--mcw) * 0.05);
+  opacity: 0.08;
 }
 
 .mc__gloss {
@@ -876,33 +1001,41 @@
   pointer-events: none;
 }
 
+/* Two peer groups, one grid.
+     row 1 — HOLE and BOARD: one shared baseline
+     row 2 — the two card rows: one shared top edge
+   The divider spans both rows so it reads as the seam between the groups
+   rather than as a decoration hung off one of them. */
 .hsnap__cards {
   position: relative;
-  display: flex;
-  align-items: flex-end;
+  display: grid;
+  grid-template-columns: auto auto auto;
+  grid-template-rows: auto auto;
+  align-items: start;
   justify-content: center;
-  gap: var(--sp-2);
+  column-gap: var(--sp-2);
+  row-gap: 5px;
 }
-
-.hsnap__group {
-  display: flex;
-  flex-direction: column;
-  gap: 5px;
-  min-width: 0;
-}
-
-.hsnap__group--hole { align-items: flex-start; }
-.hsnap__group--board { align-items: flex-start; }
 
 .hsnap__cap {
   color: rgba(214, 232, 222, 0.5);
   font-size: 9px;
 }
 
+.hsnap__cap--hole { grid-area: 1 / 1; }
+.hsnap__cap--board { grid-area: 1 / 3; }
+.hsnap__row--hole { grid-area: 2 / 1; }
+.hsnap__row--board { grid-area: 2 / 3; }
+
+.hsnap__row {
+  min-width: 0;
+}
+
 .hsnap__div {
+  grid-area: 1 / 2 / 3 / 3;
   align-self: stretch;
   width: 1px;
-  margin: 14px 2px 4px;
+  margin: 1px 2px 6px;
   background: linear-gradient(180deg, transparent, rgba(255, 255, 255, 0.14), transparent);
 }
 
@@ -972,13 +1105,34 @@
    REACTION BAR
    ═══════════════════════════════════════════════════════════════ */
 
+/* One affordance language for the whole row. Every control is the same pill
+   material; only the add button, which is the row's primary, is different —
+   and it is different on purpose (round, raised, gold plus badge).
+
+   Painted bodies stay at 32/34px so the row keeps its vertical rhythm; the
+   touch target is grown to 44px with a transparent ::after on each control.
+   `--hit` is the 44px HIG floor from tokens.css. */
 .rbar {
   display: flex;
   align-items: center;
-  gap: var(--sp-3);
+  gap: var(--sp-2);
   margin-top: var(--sp-3);
   padding-top: var(--sp-3);
   border-top: 1px solid var(--line-1);
+}
+
+.rchip::after,
+.rbar__act::after,
+.rbar__add::after {
+  content: '';
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  width: 100%;
+  min-width: var(--hit);
+  height: var(--hit);
+  border-radius: var(--r-pill);
 }
 
 .rbar__left {
@@ -999,34 +1153,49 @@
 .rbar__faces { flex: 0 0 auto; }
 .rbar__total { flex: 0 0 auto; }
 
-.rchip {
+.rchip,
+.rbar__act {
   position: relative;
   display: inline-flex;
   align-items: center;
+  justify-content: center;
   gap: 4px;
   flex: 0 0 auto;
-  height: 30px;
+  height: 32px;
   padding: 0 8px 0 5px;
   border-radius: var(--r-pill);
-  background: rgba(255, 255, 255, 0.05);
-  box-shadow: inset 0 0 0 1px var(--line-1), var(--inset-hi);
+  /* A body, not a hairline: a lit top edge, a floor, and a seated shadow, so
+     the chip reads as something you can push rather than as metadata. */
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.1), rgba(255, 255, 255, 0.035));
+  box-shadow:
+    inset 0 0 0 1px var(--line-2),
+    inset 0 1px 0 rgba(255, 255, 255, 0.14),
+    inset 0 -1px 0 rgba(0, 0, 0, 0.28),
+    0 1px 2px rgba(3, 5, 10, 0.4);
   transition:
     transform var(--d-fast) var(--ease-spring),
     box-shadow var(--d-fast) var(--ease-out),
     background-color var(--d-fast) var(--ease-out);
 }
 
-.rchip:active { transform: scale(0.93); }
+.rchip:active,
+.rbar__act:active { transform: scale(0.93); }
 
 .rchip.is-mine {
-  background: rgba(255, 255, 255, 0.12);
-  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.24), var(--inset-hi);
+  background: rgba(255, 255, 255, 0.16);
+  box-shadow:
+    inset 0 0 0 1px rgba(255, 255, 255, 0.3),
+    inset 0 1px 0 rgba(255, 255, 255, 0.18),
+    0 1px 2px rgba(3, 5, 10, 0.4);
 }
 
 @supports (background: color-mix(in srgb, red 10%, transparent)) {
   .rchip.is-mine {
-    background: color-mix(in srgb, var(--rc) 18%, transparent);
-    box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--rc) 46%, transparent), var(--inset-hi);
+    background: color-mix(in srgb, var(--rc) 20%, transparent);
+    box-shadow:
+      inset 0 0 0 1px color-mix(in srgb, var(--rc) 52%, transparent),
+      inset 0 1px 0 rgba(255, 255, 255, 0.18),
+      0 1px 2px rgba(3, 5, 10, 0.4);
   }
 }
 
@@ -1105,27 +1274,24 @@
 .rbar__right {
   display: flex;
   align-items: center;
-  gap: 2px;
+  gap: 6px;
   flex: 0 0 auto;
 }
 
+/* Comment and share used to be bare icons — three affordance treatments in one
+   row. They now wear the chip body, so the row reads as one control family. */
 .rbar__act {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 4px;
   min-width: 34px;
-  height: 38px;
-  padding: 0 6px;
-  border-radius: var(--r-sm);
-  color: var(--c-slate-300);
-  transition: transform var(--d-fast) var(--ease-spring), color var(--d-fast) var(--ease-out);
+  padding: 0 8px;
+  color: var(--c-slate-200);
 }
 
-.rbar__act:active {
-  transform: scale(0.9);
-  color: var(--c-white);
+.rbar__act--share {
+  min-width: 38px;
+  padding: 0;
 }
+
+.rbar__act:active { color: var(--c-white); }
 
 .rbar__n {
   font: var(--t-label);
@@ -1141,9 +1307,10 @@
   place-items: center;
   width: 38px;
   height: 38px;
-  margin-left: 4px;
+  margin-left: 1px;
   border-radius: 50%;
-  background: linear-gradient(170deg, rgba(255, 255, 255, 0.1), rgba(255, 255, 255, 0.03));
+  color: var(--c-slate-100);
+  background: linear-gradient(170deg, rgba(255, 255, 255, 0.14), rgba(255, 255, 255, 0.04));
   box-shadow: inset 0 0 0 1px var(--line-2), var(--inset-hi), var(--e-1);
   transition: transform var(--d-fast) var(--ease-spring);
 }
@@ -1350,6 +1517,7 @@
 }
 
 .cthread__toggle {
+  position: relative;
   display: inline-flex;
   align-items: center;
   gap: 4px;
@@ -1357,6 +1525,17 @@
   padding: 0 2px;
   font: var(--t-label);
   color: var(--c-slate-400);
+}
+
+.cthread__toggle::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 100%;
+  min-width: var(--hit);
+  height: var(--hit);
 }
 
 .cthread__toggle:active { color: var(--c-slate-200); }
@@ -1470,17 +1649,29 @@
 
 .cmt__acts {
   display: flex;
-  gap: var(--sp-3);
+  gap: var(--sp-5);
   margin-top: 3px;
 }
 
 .cmt__act {
+  position: relative;
   font: var(--t-micro);
   text-transform: uppercase;
   letter-spacing: var(--ls-caps);
   color: var(--c-slate-500);
   min-height: 22px;
   padding: 0;
+}
+
+.cmt__act::after {
+  content: '';
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  width: 100%;
+  min-width: var(--hit);
+  height: var(--hit);
 }
 
 .cmt__act:active { color: var(--c-slate-200); }
@@ -1590,6 +1781,7 @@
 .ccompose__input::placeholder { color: var(--c-slate-500); }
 
 .ccompose__send {
+  position: relative;
   display: grid;
   place-items: center;
   width: 40px;
@@ -1600,6 +1792,17 @@
   background: var(--grad-gold);
   box-shadow: var(--e-1), inset 0 1px 0 rgba(255, 255, 255, 0.5);
   transition: transform var(--d-fast) var(--ease-spring), opacity var(--d-fast) var(--ease-out);
+}
+
+.ccompose__send::after {
+  content: '';
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  width: var(--hit);
+  height: var(--hit);
+  border-radius: 50%;
 }
 
 .ccompose__send:disabled {
@@ -1641,6 +1844,7 @@
 
 .rvw__x,
 .rvw__share {
+  position: relative;
   display: grid;
   place-items: center;
   width: 38px;
@@ -1651,6 +1855,20 @@
   background: var(--s-glass);
   box-shadow: inset 0 0 0 1px var(--line-1), var(--inset-hi);
   transition: transform var(--d-fast) var(--ease-spring);
+}
+
+/* 38px disc, 44px target. The painted body stays small so the title between
+   them keeps its width. */
+.rvw__x::after,
+.rvw__share::after {
+  content: '';
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  width: var(--hit);
+  height: var(--hit);
+  border-radius: 50%;
 }
 
 .rvw__x:active,
@@ -1985,10 +2203,13 @@
   text-align: center;
 }
 
+/* The scrubber's grab area is the element itself, so it grows to the 44px
+   floor and pulls the extra height back out with a negative margin — the
+   track and thumb are centred on it, so nothing moves optically. */
 .rvwscrub {
   position: relative;
-  height: 34px;
-  margin: 2px 4px 0;
+  height: var(--hit);
+  margin: -3px 4px -5px;
   touch-action: none;
   outline: none;
 }

@@ -15,7 +15,7 @@
 import { h } from '../dom.ts';
 import { icon } from '../components/icons.ts';
 import { haptic, pressFeedback } from '../components/util.ts';
-import { compactCount } from './data.ts';
+import { fmtCount } from './data.ts';
 
 export type LobbyMode = 'nlhe' | 'plo4' | 'sng' | 'bomb';
 
@@ -215,7 +215,7 @@ export function ModeSelector(opts: ModeSelectorOpts): ModeSelectorEl {
 
   el.setValue = (mode, silent = true) => select(mode, silent);
   el.setLive = (counts) => {
-    for (const [id, c] of cards) c.live.textContent = compactCount(counts[id] ?? 0);
+    for (const [id, c] of cards) c.live.textContent = fmtCount(counts[id] ?? 0);
   };
   el.value = () => current;
 

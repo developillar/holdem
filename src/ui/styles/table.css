@@ -1770,6 +1770,10 @@
 /* ───────────────────────────── sheets ───────────────────────────── */
 
 .sheet {
+  /* Local springs — tokens.css has no overshoot curve tuned for a 400px panel.
+     `--ease-sheet` lands with a small settle; `--d-sheet` is the panel travel. */
+  --ease-sheet: cubic-bezier(0.22, 1.2, 0.36, 1);
+  --d-sheet: 460ms;
   position: fixed;
   inset: 0;
   z-index: var(--z-sheet);
@@ -1801,7 +1805,7 @@
   border-top: 1px solid var(--line-2);
   box-shadow: 0 -20px 60px rgba(2, 4, 9, 0.72);
   transform: translate3d(0, 100%, 0);
-  transition: transform var(--d-slow) var(--ease-out);
+  transition: transform var(--d-sheet) var(--ease-sheet);
   will-change: transform;
 }
 
@@ -1844,6 +1848,7 @@
 }
 
 .sheet__x {
+  position: relative;
   display: grid;
   place-items: center;
   width: 34px;
@@ -1852,10 +1857,25 @@
   color: var(--c-slate-300);
   background: rgba(255, 255, 255, 0.06);
   border: 1px solid var(--line-1);
-  transition: transform var(--d-fast) var(--ease-snap);
+  transition: transform var(--d-fast) var(--ease-snap), background var(--d-fast) linear,
+    color var(--d-fast) linear;
 }
 
-.sheet__x:active { transform: scale(0.9); }
+/* The disc stays 34px for optical balance against the title; the hit area is
+   44×44 per HIG. Invisible, non-painting, purely a target expander. */
+.sheet__x::after {
+  content: '';
+  position: absolute;
+  inset: -5px;
+  border-radius: 50%;
+}
+
+.sheet__x:active,
+.sheet__x.is-pressed {
+  transform: scale(0.88);
+  background: rgba(255, 255, 255, 0.12);
+  color: var(--c-white);
+}
 
 .sheet__body {
   flex: 1;
@@ -2368,11 +2388,17 @@
 
 /* ───────────────────────────── buy-in ───────────────────────────── */
 
+/* Hierarchy contract for this sheet:
+   1. the amount  — biggest thing on the surface, the only gold *text*
+   2. the CTA     — the only solid-gold *surface* on the screen
+   Everything else (presets, slider, range labels) is neutral. */
+
 .bi__context {
   display: none;
-  font: var(--t-body-sm);
-  color: var(--c-slate-400);
-  margin-bottom: var(--sp-4);
+  font: 450 13px/1.4 var(--f-ui);
+  letter-spacing: -0.005em;
+  color: var(--c-slate-300);
+  margin-bottom: var(--sp-3);
 }
 
 .bi__context.is-shown { display: block; }
@@ -2381,29 +2407,60 @@
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 4px;
+  gap: 6px;
+  /* Locked height so the block never jumps between values or between the
+     buy-in and add-chips variants. */
+  min-height: 112px;
   padding: var(--sp-5) 0 var(--sp-4);
 }
 
+/* The hero. `--bi-amt-size` is stepped down in JS for long strings so a
+   $1,250.00 max never wraps or shrinks the sheet. */
 .bi__amt {
-  font: 800 42px/1 var(--f-num);
-  letter-spacing: -0.04em;
+  position: relative;
+  display: inline-grid;
+  font: 800 var(--bi-amt-size, 52px) / 1 var(--f-num);
+  letter-spacing: -0.045em;
+  color: transparent;
+}
+
+/* An invisible copy of the widest string this sheet can show reserves the
+   width, so dragging $10.00 → $12.50 never grows the block outward from
+   centre. The live value is centred on top of it. */
+.bi__amt-ghost {
+  visibility: hidden;
+  pointer-events: none;
+}
+
+.bi__amt-v {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
   background: var(--grad-gold);
   -webkit-background-clip: text;
   background-clip: text;
   color: transparent;
-  text-shadow: 0 6px 30px rgba(217, 169, 58, 0.22);
+  text-shadow: 0 6px 34px rgba(217, 169, 58, 0.24);
 }
 
 .bi__bb {
-  font: 600 13px/1 var(--f-num);
-  color: var(--c-slate-400);
+  font: 500 13px/1 var(--f-num);
+  letter-spacing: 0.002em;
+  color: var(--c-slate-300);
 }
 
 .bi__track {
   position: relative;
   height: 44px;
   touch-action: none;
+  outline: none;
+}
+
+.bi__track:focus-visible .bi__thumb {
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.6), 0 8px 20px rgba(0, 0, 0, 0.5),
+    0 0 0 3px rgba(217, 169, 58, 0.65), inset 0 1px 0 rgba(255, 255, 255, 0.34),
+    inset 0 -3px 6px rgba(0, 0, 0, 0.42);
 }
 
 .bi__groove {
@@ -2418,19 +2475,68 @@
   box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.6), inset 0 0 0 1px rgba(255, 255, 255, 0.06);
 }
 
+/* The bloom. A purely vertical gradient is invariant under horizontal scale,
+   so the halo reads identically at every value — unlike a box-shadow on a
+   scaleX'd element, which squashes with it. */
+.bi__aura {
+  position: absolute;
+  left: 4px;
+  right: 17px;
+  top: 50%;
+  height: 26px;
+  margin-top: -13px;
+  transform-origin: left center;
+  opacity: 0.85;
+  background: linear-gradient(
+    180deg,
+    rgba(217, 169, 58, 0) 0%,
+    rgba(217, 169, 58, 0.08) 26%,
+    rgba(217, 169, 58, 0.34) 50%,
+    rgba(217, 169, 58, 0.08) 74%,
+    rgba(217, 169, 58, 0) 100%
+  );
+  /* Ramps in from the round cap so the halo has no hard vertical edge at the
+     bar's start. Proportional, so the ramp scales with the bar instead of
+     snapping to a fixed width. The leading end needs no fade — it always
+     terminates exactly under the thumb. */
+  -webkit-mask-image: linear-gradient(90deg, transparent 0%, #000 8%);
+  mask-image: linear-gradient(90deg, transparent 0%, #000 8%);
+  transition: opacity var(--d-fast) linear;
+}
+
+.bi__track.is-dragging .bi__aura { opacity: 1; }
+
+/* Square-edged bar starting at the cap's centre: a scaleX'd border-radius
+   renders as an ellipse (at t=0.29 a 4px cap draws ~1.1px, i.e. a square
+   edge), so the round end lives on `.bi__cap`, which is never transformed.
+   Identical vertical gradients — invariant under horizontal scale — so the
+   two read as one continuous surface with no seam. */
 .bi__fill {
   position: absolute;
-  left: 17px;
+  left: 4px;
   right: 17px;
   top: 50%;
   height: 8px;
   margin-top: -4px;
-  border-radius: var(--r-pill);
   transform-origin: left center;
-  background: var(--grad-gold-soft);
-  box-shadow: 0 0 12px rgba(217, 169, 58, 0.36);
+  background: linear-gradient(180deg, var(--c-gold-200) 0%, var(--c-gold-400) 62%, var(--c-gold-500) 100%);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.34);
 }
 
+.bi__cap {
+  position: absolute;
+  left: 0;
+  top: 50%;
+  width: 8px;
+  height: 8px;
+  margin-top: -4px;
+  border-radius: 50%;
+  background: linear-gradient(180deg, var(--c-gold-200) 0%, var(--c-gold-400) 62%, var(--c-gold-500) 100%);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.34);
+}
+
+/* Gunmetal, not chrome. A near-white puck outshone the CTA; this reads as
+   machined hardware and keeps gold for the amount and the commit button. */
 .bi__thumb {
   position: absolute;
   left: 0;
@@ -2443,61 +2549,71 @@
   align-items: center;
   justify-content: center;
   gap: 2px;
-  background: linear-gradient(180deg, #fdfdff 0%, #d7dced 46%, #a7b0c6 100%);
-  border: 1px solid rgba(255, 255, 255, 0.6);
-  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.55), 0 8px 20px rgba(0, 0, 0, 0.44),
-    inset 0 -2px 4px rgba(0, 0, 0, 0.22);
+  background: linear-gradient(180deg, #737e94 0%, #414b60 44%, #232a3a 100%);
+  border: 1px solid rgba(255, 255, 255, 0.22);
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.6), 0 8px 20px rgba(0, 0, 0, 0.5),
+    0 0 0 1px rgba(217, 169, 58, 0.2), inset 0 1px 0 rgba(255, 255, 255, 0.34),
+    inset 0 -3px 6px rgba(0, 0, 0, 0.42);
+  transition: box-shadow var(--d-fast) var(--ease-out);
 }
 
 .bi__knurl {
   width: 1.5px;
   height: 12px;
   border-radius: 1px;
-  background: rgba(40, 48, 66, 0.55);
+  background: linear-gradient(180deg, rgba(246, 224, 160, 0.85), rgba(192, 141, 33, 0.55));
+  box-shadow: 0 1px 0 rgba(0, 0, 0, 0.4);
 }
 
 .bi__track.is-dragging .bi__thumb {
-  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.55), 0 8px 22px rgba(0, 0, 0, 0.5),
-    0 0 0 9px rgba(217, 169, 58, 0.16), inset 0 -2px 4px rgba(0, 0, 0, 0.22);
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.6), 0 8px 22px rgba(0, 0, 0, 0.52),
+    0 0 0 9px rgba(217, 169, 58, 0.18), 0 0 0 1px rgba(217, 169, 58, 0.45),
+    inset 0 1px 0 rgba(255, 255, 255, 0.34), inset 0 -3px 6px rgba(0, 0, 0, 0.42);
 }
 
 .bi__ends {
   display: flex;
   justify-content: space-between;
-  margin-top: 2px;
+  margin-top: 4px;
 }
 
+/* Axis micro-labels. Caps tracking now sits on actual caps. */
 .bi__end {
-  font: var(--t-micro);
+  font: 600 11px/1.2 var(--f-ui);
+  text-transform: uppercase;
   letter-spacing: var(--ls-caps);
-  color: var(--c-slate-400);
+  color: var(--c-slate-300);
 }
 
 .bi__presets {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
   gap: 8px;
-  margin-top: var(--sp-4);
+  margin-top: var(--sp-5);
 }
 
 .bi__chip {
-  height: 42px;
+  height: 44px;
   border-radius: var(--r-md);
-  font: 650 13.5px/1 var(--f-ui);
+  font: 600 13.5px/1 var(--f-ui);
   color: var(--c-slate-200);
   background: linear-gradient(180deg, rgba(35, 42, 59, 0.86), rgba(16, 20, 30, 0.9));
   border: 1px solid var(--line-2);
   box-shadow: var(--e-1), var(--inset-hi);
   transition: transform var(--d-fast) var(--ease-snap), color var(--d-fast) linear,
-    background var(--d-fast) linear;
+    background var(--d-fast) linear, border-color var(--d-fast) linear,
+    box-shadow var(--d-fast) linear;
 }
 
 .bi__chip.is-pressed { transform: scale(0.96); }
 
+/* Selection, not a fill. Only `.bi__go` wears solid gold. */
 .bi__chip.is-active {
-  color: #2a1e05;
-  background: var(--grad-gold-soft);
-  border-color: rgba(255, 255, 255, 0.3);
+  color: var(--c-gold-200);
+  font-weight: 650;
+  background: linear-gradient(180deg, rgba(217, 169, 58, 0.14), rgba(217, 169, 58, 0.07));
+  border-color: rgba(217, 169, 58, 0.55);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.1), 0 0 0 1px rgba(217, 169, 58, 0.18);
 }
 
 .bi__go {
@@ -2517,15 +2633,51 @@
 
 .bi__go.is-pressed { transform: scale(0.98); }
 
+/* One sweep on open and one per committed value — never a loop. A perpetual
+   shine pins a compositor layer awake and reads as slot-machine chrome. */
 .bi__go-sheen {
   position: absolute;
   inset: 0 auto 0 -40%;
   width: 40%;
   background: linear-gradient(100deg, transparent, rgba(255, 255, 255, 0.5), transparent);
-  animation: sheenSweep 3.6s var(--ease-in-out) infinite;
+  transform: translate3d(0, 0, 0);
+  opacity: 0;
+}
+
+.bi__go.is-sweeping .bi__go-sheen {
+  opacity: 1;
+  animation: sheenSweep 900ms var(--ease-in-out) 1;
 }
 
 .bi__go-t { position: relative; z-index: 1; }
+
+/* ── entrance: the panel springs, the rows settle in behind it */
+
+.sheet--buyin.is-open .bi__context { animation: biRise 420ms var(--ease-sheet) 70ms backwards; }
+.sheet--buyin.is-open .bi__readout { animation: biRise 460ms var(--ease-sheet) 110ms backwards; }
+.sheet--buyin.is-open .bi__track { animation: biRise 460ms var(--ease-sheet) 150ms backwards; }
+.sheet--buyin.is-open .bi__ends { animation: biRise 460ms var(--ease-sheet) 180ms backwards; }
+.sheet--buyin.is-open .bi__presets { animation: biRise 460ms var(--ease-sheet) 210ms backwards; }
+.sheet--buyin.is-open .bi__go { animation: biRise 480ms var(--ease-sheet) 250ms backwards; }
+
+/* `backwards` only — the element reverts to its own styles when the animation
+   ends, so `.is-pressed` transforms still work afterwards. */
+@keyframes biRise {
+  from {
+    opacity: 0;
+    transform: translate3d(0, 18px, 0);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .bi__go.is-sweeping .bi__go-sheen { animation: none; opacity: 0; }
+  .sheet--buyin.is-open .bi__context,
+  .sheet--buyin.is-open .bi__readout,
+  .sheet--buyin.is-open .bi__track,
+  .sheet--buyin.is-open .bi__ends,
+  .sheet--buyin.is-open .bi__presets,
+  .sheet--buyin.is-open .bi__go { animation: none; }
+}
 
 /* ───────────────────────────── mini cards ───────────────────────────── */
 

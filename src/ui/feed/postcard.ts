@@ -5,11 +5,16 @@
  * a headline set in confident display type, a stake badge, and the hand
  * snapshot as the centrepiece.
  *
- * Tier treatment
- *   legendary  24k foil rim with a slow sheen sweeping around it
- *   epic       violet edge glow
- *   rare       cool hairline lift
- *   normal     the standard glass surface
+ * Tier treatment — the ladder is neutral → teal → gold, and it is *earned*.
+ *   legendary  24k foil rim with a slow sheen sweeping around it   (~3%)
+ *   epic       teal rim, pulled from the felt, with an inner bevel (~12%)
+ *   rare       brighter neutral hairline, no hue at all           (~27%)
+ *   normal     the standard glass surface                         (~58%)
+ *
+ * The percentages are the point. `post.tier` from the model is an importance
+ * score and it hands out `epic` to roughly half the feed; `visualTier()` in
+ * ./util.ts re-gates it so a decorated edge means something. See the note
+ * there.
  *
  * The foil is a 1px gradient *padding* on an outer element with the inner card
  * painted on top, so the animated sheen only ever shows on the rim. That keeps
@@ -28,7 +33,7 @@ import type { ReactionBarEl } from './reactionbar.ts';
 import { CommentThread } from './comments.ts';
 import type { CommentThreadEl } from './comments.ts';
 import { KIND_LABEL, kindEmblem, chevron } from './glyphs.ts';
-import { cash, fullTime, relTime } from './util.ts';
+import { cash, fullTime, relTime, visualTier } from './util.ts';
 
 export interface PostCardOpts {
   onReplay?: (post: FeedPost) => void;
@@ -83,6 +88,7 @@ function MilestoneBlock(post: FeedPost): HTMLElement {
 export function PostCard(post: FeedPost, opts: PostCardOpts = {}): PostCardEl {
   const friend = isFriend(post.author.id);
   const hasHand = !!post.hand;
+  const tier = visualTier(post);
 
   const badge = h(
     'div',
@@ -194,8 +200,8 @@ export function PostCard(post: FeedPost, opts: PostCardOpts = {}): PostCardEl {
   const el = h(
     'article',
     {
-      class: cx('post', `post--${post.tier}`, opts.fresh && 'is-fresh', opts.class),
-      dataset: { kind: post.kind, tier: post.tier },
+      class: cx('post', `post--${tier}`, opts.fresh && 'is-fresh', opts.class),
+      dataset: { kind: post.kind, tier },
       style: opts.index !== undefined ? { '--i': String(Math.min(9, opts.index)) } : undefined,
     },
     h('span', { class: 'post__rim', 'aria-hidden': 'true' }, h('span', { class: 'post__sheen' })),

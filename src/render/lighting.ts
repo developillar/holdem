@@ -41,8 +41,8 @@ export interface LightRig {
 
 const KEY_BASE = new THREE.Vector3(0.16, 2.14, 0.44);
 const KEY_TARGET = new THREE.Vector3(0, 0, -0.05);
-const KEY_INTENSITY = 30;
-const POOL_RADIUS = 1.32;
+const KEY_INTENSITY = 19.5;
+const POOL_RADIUS = 1.82;
 
 export function createLighting(): LightRig {
   const group = new THREE.Group();
@@ -52,13 +52,13 @@ export function createLighting(): LightRig {
   const key = new THREE.SpotLight(0xffd8ab, KEY_INTENSITY);
   key.position.copy(KEY_BASE);
   key.angle = Math.atan(POOL_RADIUS / KEY_BASE.y) * 1.06;
-  key.penumbra = 0.72;
+  key.penumbra = 0.78;
   key.decay = 2;
   key.distance = 9;
   key.castShadow = true;
   key.shadow.mapSize.set(1024, 1024);
   key.shadow.camera.near = 1.05;
-  key.shadow.camera.far = 4.4;
+  key.shadow.camera.far = 4.6;
   key.shadow.bias = -0.0006;
   key.shadow.normalBias = 0.022;
   key.shadow.radius = 3;
@@ -68,7 +68,7 @@ export function createLighting(): LightRig {
   group.add(key.target);
 
   // ── rim ────────────────────────────────────────────────────────────
-  const rim = new THREE.DirectionalLight(0x8fb6ff, 0.62);
+  const rim = new THREE.DirectionalLight(0x8fb6ff, 0.6);
   rim.position.set(-2.35, 1.55, -2.7);
   rim.target.position.set(0, 0, 0.15);
   rim.castShadow = false;
@@ -76,28 +76,32 @@ export function createLighting(): LightRig {
   group.add(rim.target);
 
   // ── fill ───────────────────────────────────────────────────────────
-  const hemi = new THREE.HemisphereLight(0x1d2a45, 0x06090a, 0.55);
+  const hemi = new THREE.HemisphereLight(0x1d2a45, 0x06090a, 0.28);
   hemi.position.set(0, 2, 0);
   group.add(hemi);
 
   // near practical: warm bounce off the player's side of the rail
-  const nearGlow = new THREE.PointLight(0xffc98d, 0.4, 3.2, 2);
-  nearGlow.position.set(0, 0.4, 1.62);
+  const nearGlow = new THREE.PointLight(0xffc98d, 0.42, 3.6, 2);
+  nearGlow.position.set(0, 0.78, 2.15);
   group.add(nearGlow);
 
   // far practical: cool spill from the room behind the table
-  const farGlow = new THREE.PointLight(0x7aa6e0, 0.34, 3.0, 2);
-  farGlow.position.set(0, 0.36, -1.74);
+  const farGlow = new THREE.PointLight(0x7aa6e0, 0.42, 3.2, 2);
+  farGlow.position.set(0, 0.48, -1.9);
   group.add(farGlow);
 
-  // ── volumetric shaft ───────────────────────────────────────────────
+  // ── volumetric haze band ───────────────────────────────────────────
+  // Only the last 60 cm of the shaft is drawn. The full cone would put a
+  // hard-edged triangle across the whole upper frame.
   const shaftLen = KEY_BASE.distanceTo(KEY_TARGET);
-  const coneGeo = new THREE.CylinderGeometry(0.075, POOL_RADIUS * 1.02, shaftLen, 40, 1, true);
-  coneGeo.translate(0, shaftLen / 2, 0);
+  const bandH = 0.62;
+  const bandTopR = POOL_RADIUS + (0.075 - POOL_RADIUS) * (bandH / shaftLen);
+  const coneGeo = new THREE.CylinderGeometry(bandTopR, POOL_RADIUS * 1.02, bandH, 44, 1, true);
+  coneGeo.translate(0, bandH / 2, 0);
   const coneUniforms = {
     uColor: { value: new THREE.Color(0xffd2a0) },
-    uIntensity: { value: 0.085 },
-    uHeight: { value: shaftLen },
+    uIntensity: { value: 0.055 },
+    uHeight: { value: bandH },
     uTime: { value: 0 },
   };
   const coneMat = new THREE.ShaderMaterial({
@@ -128,8 +132,8 @@ export function createLighting(): LightRig {
   const pool: LightPool = {
     x: KEY_TARGET.x,
     z: KEY_TARGET.z,
-    inner: 0.55,
-    outer: 1.85,
+    inner: 0.5,
+    outer: 1.95,
     strength: 0.3,
   };
 
@@ -168,18 +172,18 @@ export function createLighting(): LightRig {
         KEY_BASE.z + 0.024 * Math.cos(elapsed * 0.137),
       );
 
-      rim.intensity = 0.62 * (1 + 0.05 * Math.sin(elapsed * 0.21 + 3.1));
-      nearGlow.intensity = 0.4 * (1 + 0.09 * Math.sin(elapsed * 0.43 + 1.1));
+      rim.intensity = 0.6 * (1 + 0.05 * Math.sin(elapsed * 0.21 + 3.1));
+      nearGlow.intensity = 0.42 * (1 + 0.09 * Math.sin(elapsed * 0.43 + 1.1));
 
       tmpColor.copy(baseKeyColor).lerp(accentColor, accentAmount);
       key.color.copy(tmpColor);
       coneUniforms.uColor.value.copy(tmpColor);
       coneUniforms.uTime.value = elapsed;
-      coneUniforms.uIntensity.value = (tier === 'high' ? 0.085 : 0.05) * (1 + pulseAmount * 1.6);
+      coneUniforms.uIntensity.value = (tier === 'high' ? 0.055 : 0.032) * (1 + pulseAmount * 1.6);
 
       if (tier !== 'low') placeCone();
 
-      pool.strength = 0.3 + pulseAmount * 0.25;
+      pool.strength = 0.3 + pulseAmount * 0.18;
     },
 
     setQuality(next: PerfTier) {
@@ -195,7 +199,7 @@ export function createLighting(): LightRig {
       rim.visible = true;
       nearGlow.visible = !low;
       farGlow.visible = next === 'high';
-      hemi.intensity = low ? 0.78 : 0.55;
+      hemi.intensity = low ? 0.46 : 0.28;
     },
 
     setAccent(color, amount) {

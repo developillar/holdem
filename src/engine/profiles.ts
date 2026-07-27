@@ -70,7 +70,7 @@ const BANDS: Record<Personality, StatBand> = {
     winrate: [-3, 6], skill: [0.55, 0.78],
   },
   station: {
-    vpip: [37, 53], pfr: [7.5, 14.5], threeBet: [1.2, 3], foldToThreeBet: [30, 44],
+    vpip: [44, 58], pfr: [7, 13], threeBet: [1.2, 3], foldToThreeBet: [30, 44],
     af: [0.8, 1.5], wtsd: [37, 47], wsd: [44, 49], cbetFlop: [38, 53],
     winrate: [-14, -3], skill: [0.2, 0.4],
   },

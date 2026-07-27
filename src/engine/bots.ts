@@ -910,12 +910,12 @@ export interface PersonalityTraits {
 
 export const PERSONALITY_TRAITS: Record<Personality, PersonalityTraits> = {
   nit: {
-    rangeMul: 0.62, aggression: 0.5, bluff: 0.05, openRaise: 0.86, cbet: 0.55, cbetSize: 0.5, threeBet: 0.45,
+    rangeMul: 0.62, aggression: 0.5, bluff: 0.05, openRaise: 0.93, cbet: 0.55, cbetSize: 0.5, threeBet: 0.45,
     callDown: 0.22, slowplay: 0.34, checkRaise: 0.05, float: 0.05, overbet: 0.02,
     speed: 1.15, noise: 0.12, tiltGain: 0.5,
   },
   tag: {
-    rangeMul: 0.92, aggression: 0.72, bluff: 0.14, openRaise: 0.95, cbet: 0.68, cbetSize: 0.55, threeBet: 1.0,
+    rangeMul: 0.98, aggression: 0.72, bluff: 0.14, openRaise: 0.95, cbet: 0.68, cbetSize: 0.55, threeBet: 1.0,
     callDown: 0.38, slowplay: 0.18, checkRaise: 0.12, float: 0.16, overbet: 0.07,
     speed: 1.0, noise: 0.1, tiltGain: 0.7,
   },
@@ -925,7 +925,7 @@ export const PERSONALITY_TRAITS: Record<Personality, PersonalityTraits> = {
     speed: 0.85, noise: 0.16, tiltGain: 1.0,
   },
   station: {
-    rangeMul: 1.7, aggression: 0.3, bluff: 0.04, openRaise: 0.14, cbet: 0.45, cbetSize: 0.45, threeBet: 0.35,
+    rangeMul: 1.55, aggression: 0.3, bluff: 0.04, openRaise: 0.14, cbet: 0.45, cbetSize: 0.45, threeBet: 0.35,
     callDown: 0.85, slowplay: 0.3, checkRaise: 0.04, float: 0.1, overbet: 0.02,
     speed: 1.3, noise: 0.22, tiltGain: 0.4,
   },

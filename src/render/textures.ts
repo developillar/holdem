@@ -271,13 +271,17 @@ export class TextureFactory {
       for (let x = 0; x < n; x++) {
         const u = (x / n) * period;
         const v = (y / n) * period;
+        // Macro undulation first. This is the only band that survives
+        // minification on a phone — without it the felt mips down to a flat
+        // plastic gradient no matter how good the weave underneath is.
+        const swell = fbm(u * 0.16, v * 0.16, period, 3, 505);
         // interlocking warp/weft plus a fuzzy nap on top
         const warp = 0.5 + 0.5 * Math.sin(u * Math.PI * 2);
         const weft = 0.5 + 0.5 * Math.sin(v * Math.PI * 2);
         const weave = warp * weft * 0.55 + (1 - warp) * (1 - weft) * 0.28;
         const nap = fbm(u * 2.4, v * 2.4, period * 2, 4, 91);
         const fine = vnoise(u * 8, v * 8, period * 8, 17);
-        field[y * n + x] = weave * 0.42 + nap * 0.4 + fine * 0.18;
+        field[y * n + x] = swell * 0.62 + weave * 0.16 + nap * 0.16 + fine * 0.06;
       }
     }
     return field;

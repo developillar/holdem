@@ -114,7 +114,7 @@ float rAAStep(float edge, float x) {
   return smoothstep(edge - w, edge + w, x);
 }
 
-/** Antialiased band around `center` of half width `hw`. */
+/** Antialiased band of half width hw, centred on the given value. */
 float rAABand(float x, float center, float hw) {
   float w = max(fwidth(x), 1e-5);
   return smoothstep(center - hw - w, center - hw + w, x) *

@@ -30,6 +30,7 @@ uniform float uVignetteSoft;
 uniform float uGrain;
 uniform float uTime;
 uniform vec2  uResolution;
+uniform vec2  uVigScale;      // normalises the vignette to the long screen axis
 uniform vec3  uLift;          // lifted-black tint, keeps OLED shadows from crushing
 uniform float uSaturation;
 
@@ -87,8 +88,11 @@ void main() {
              + texture2D(tBloomWide, uv).rgb * uBloomWide;
   vec3 color = scene + bloom;
 
-  // ── vignette in linear light: an optical falloff, not a black overlay
-  float vig = 1.0 - uVignette * smoothstep(uVignetteSoft, 0.72, length(fromCenter * vec2(1.0, 0.82)));
+  // ── vignette in linear light: an optical falloff, not a black overlay.
+  //    Measured against the long screen axis so a 19.5:9 phone darkens at
+  //    the top and bottom, where the chrome lives, and not down the sides.
+  float vigR = length(fromCenter * uVigScale) * 2.0;
+  float vig = 1.0 - uVignette * smoothstep(uVignetteSoft, 1.12, vigR);
   color *= vig;
 
   color = acesFilmic(color);

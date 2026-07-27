@@ -118,21 +118,22 @@ ${noiseChunk}
 ${utilChunk}
 
 void main() {
-  // 0 at the emitter, 1 at the felt
+  // 0 at the top of the band, 1 where it meets the felt
   float t = rSat((uHeight - vLocal.y) / max(uHeight, 1e-4));
 
-  // the shaft is brightest at the source and dies before it lands, so it
-  // never draws a hard rim where it meets the table
-  float shaft = pow(1.0 - t, 1.6) * smoothstep(0.0, 0.14, t);
-  shaft *= 1.0 - smoothstep(0.72, 1.0, t);
+  // A short haze band hugging the table rather than a full shaft: a whole
+  // cone from the fixture down draws a hard triangular silhouette against a
+  // dark surround, which reads as a modelling mistake rather than as light.
+  // Fading to zero at both ends leaves only the glow, never the geometry.
+  float shaft = smoothstep(0.0, 0.62, t) * (1.0 - smoothstep(0.78, 1.0, t));
 
   // grazing faces are thicker: fake the extra path length through the cone
   float graze = 1.0 - abs(dot(normalize(vWorldNormal), vViewDir));
-  shaft *= pow(rSat(graze), 1.35);
+  shaft *= pow(rSat(graze), 1.6);
 
   // slow dust drift
   float dust = rFbm(vec2(atan(vLocal.z, vLocal.x) * 1.6, vLocal.y * 2.2 - uTime * 0.045), 3);
-  shaft *= 0.72 + dust * 0.56;
+  shaft *= 0.68 + dust * 0.64;
 
   gl_FragColor = vec4(uColor * shaft * uIntensity, 1.0);
 }

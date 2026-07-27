@@ -64,9 +64,15 @@ import type { SngConfig } from './sng.ts';
 // ═══════════════════════════════════════════════════════════════════
 
 export interface HandEngineAdapter {
-  evaluate7?(cards: CardId[]): HandRank;
-  evaluatePlo?(hole: CardId[], board: CardId[]): HandRank;
-  buildPots?(commitments: number[], folded: boolean[]): Pot[];
+  /** `evaluator.evaluateHoldem(hole, board)` */
+  evaluateHoldem?(hole: readonly CardId[], board: readonly CardId[]): HandRank;
+  /** `plo.evaluatePlo(hole, board)` */
+  evaluatePlo?(hole: readonly CardId[], board: readonly CardId[]): HandRank;
+  /** `pots.buildPots(commitments, step)` */
+  buildPots?(
+    commitments: ReadonlyArray<{ seat: number; total: number; folded: boolean }>,
+    step?: number,
+  ): Pot[];
 }
 
 let adapter: HandEngineAdapter = {};
@@ -80,16 +86,16 @@ function evalHand(variant: GameVariant, hole: readonly CardId[], board: readonly
   if (variant === 'plo4') {
     if (adapter.evaluatePlo) {
       try {
-        return adapter.evaluatePlo(hole.slice(), board.slice());
+        return adapter.evaluatePlo(hole, board);
       } catch {
         /* fall through to the built-in */
       }
     }
     return showdownRank('plo4', hole, board);
   }
-  if (adapter.evaluate7) {
+  if (adapter.evaluateHoldem) {
     try {
-      return adapter.evaluate7([...hole, ...board]);
+      return adapter.evaluateHoldem(hole, board);
     } catch {
       /* fall through to the built-in */
     }
@@ -976,7 +982,10 @@ export class LocalTable {
     const folded = this.seats.map((s) => !s.inHand || s.folded);
     if (adapter.buildPots) {
       try {
-        const out = adapter.buildPots(commitments, folded);
+        const out = adapter.buildPots(
+          this.seats.map((s) => ({ seat: s.index, total: commitments[s.index], folded: folded[s.index] })),
+          this.chipUnit,
+        );
         if (Array.isArray(out) && out.length) return out;
       } catch {
         /* fall through to the built-in */

@@ -142,7 +142,9 @@ function buildSeats(size: number): SeatAnchors[] {
     return {
       slot,
       angle: a,
-      plate: ellipse(RAIL_CX, RAIL_CZ, a, RAIL_H * 0.96),
+      // Pulled a little inside the rail crest: pinned at the true widest
+      // point a 120 px nameplate hangs off the screen on a 360 px device.
+      plate: ellipse(RAIL_CX * 0.93, RAIL_CZ * 0.965, a, RAIL_H * 0.96),
       cards,
       bet: betPoint,
       stack,
@@ -243,27 +245,27 @@ export interface TableSkin {
 }
 
 export const DEFAULT_SKIN: TableSkin = {
-  feltColor: '#14432d',
-  feltAccent: '#1c5a3c',
+  feltColor: '#103a28',
+  feltAccent: '#175139',
   feltEdge: '#06180f',
-  feltSheen: '#5f8f74',
+  feltSheen: '#3f6b54',
   railMaterial: 'leather',
-  railColor: '#1a1310',
-  stitchColor: '#c8a86a',
+  railColor: '#3a2a20',
+  stitchColor: '#8f7448',
   seamColor: '#0a0705',
   logoId: 'royale-classic',
   logoTint: '#dfe4ee',
-  logoOpacity: 0.34,
+  logoOpacity: 0.26,
   trimMetal: 'gold',
   betLineColor: '#edc96b',
-  betLineStrength: 0.42,
+  betLineStrength: 0.34,
 };
 
 const TRIM_METALS: Record<TrimMetalId, { color: string; roughness: number; aniso: number }> = {
-  gold: { color: '#d9a93a', roughness: 0.23, aniso: 0.62 },
-  platinum: { color: '#cfd6e2', roughness: 0.17, aniso: 0.7 },
-  copper: { color: '#c07a45', roughness: 0.27, aniso: 0.6 },
-  gunmetal: { color: '#5a6270', roughness: 0.33, aniso: 0.55 },
+  gold: { color: '#b58a30', roughness: 0.66, aniso: 0.3 },
+  platinum: { color: '#b4bdcb', roughness: 0.58, aniso: 0.32 },
+  copper: { color: '#9d6234', roughness: 0.68, aniso: 0.3 },
+  gunmetal: { color: '#474e59', roughness: 0.72, aniso: 0.26 },
 };
 
 // ─────────────────────────── geometry builders ───────────────────────────
@@ -507,17 +509,17 @@ export function createTable(env: THREE.Texture | null): TableHandle {
     uFeltRadii: { value: new THREE.Vector2(FELT_RX, FELT_RZ) },
     uFeltEdge: { value: new THREE.Color(skin.feltEdge) },
     uFeltAccent: { value: new THREE.Color(skin.feltAccent) },
-    uFiberScale: { value: 62.0 },
-    uNapStrength: { value: 0.05 },
-    uWear: { value: 0.16 },
+    uFiberScale: { value: 30.0 },
+    uNapStrength: { value: 0.055 },
+    uWear: { value: 0.2 },
     uLogoMap: { value: tex.get(`logo:${skin.logoId}`) },
-    uLogoRect: { value: new THREE.Vector4(0, BOARD_Z - 0.02, 0.42, 0.42) },
+    uLogoRect: { value: new THREE.Vector4(0, 0.06, 0.34, 0.34) },
     uLogoTint: { value: new THREE.Color(skin.logoTint) },
     uLogoOpacity: { value: skin.logoOpacity },
     uBetRadii: { value: new THREE.Vector2(BET_RX, BET_RZ) },
     uBetColor: { value: new THREE.Color(skin.betLineColor) },
     uBetStrength: { value: skin.betLineStrength },
-    uPool: { value: new THREE.Vector4(0, -0.05, 0.55, 1.85) },
+    uPool: { value: new THREE.Vector4(0, -0.05, 0.5, 1.95) },
     uPoolStrength: { value: 0.3 },
     uPoolTint: { value: new THREE.Color('#3a2a12') },
   };
@@ -526,17 +528,17 @@ export function createTable(env: THREE.Texture | null): TableHandle {
     color: new THREE.Color(skin.feltColor),
     roughness: 0.95,
     metalness: 0,
-    sheen: 0.85,
+    sheen: 0.3,
     sheenColor: new THREE.Color(skin.feltSheen),
-    sheenRoughness: 0.7,
+    sheenRoughness: 0.85,
     normalMap: tex.get('felt-normal'),
-    normalScale: new THREE.Vector2(0.42, 0.42),
+    normalScale: new THREE.Vector2(0.62, 0.62),
     roughnessMap: tex.get('felt-rough'),
-    envMapIntensity: 0.22,
+    envMapIntensity: 0.07,
     dithering: true,
   });
-  feltMat.normalMap!.repeat.set(26, 26);
-  feltMat.roughnessMap!.repeat.set(26, 26);
+  feltMat.normalMap!.repeat.set(4.5, 4.5);
+  feltMat.roughnessMap!.repeat.set(9, 9);
   feltMat.onBeforeCompile = (shader) => {
     Object.assign(shader.uniforms, feltUniforms);
     shader.vertexShader = shader.vertexShader
@@ -581,35 +583,35 @@ export function createTable(env: THREE.Texture | null): TableHandle {
   ];
 
   const railUniforms = {
-    uGrainScale: { value: 34.0 },
-    uGrainDepth: { value: 0.5 },
-    uCreaseDepth: { value: 0.22 },
+    uGrainScale: { value: 5.5 },
+    uGrainDepth: { value: 0.18 },
+    uCreaseDepth: { value: 0.2 },
     uSeamColor: { value: new THREE.Color(skin.seamColor) },
     uThreadColor: { value: new THREE.Color(skin.stitchColor) },
-    uCrestTint: { value: new THREE.Color('#e6c78d') },
-    uStitch: { value: new THREE.Vector4(0.2, 132.0, 0.016, 0.03) },
+    uCrestTint: { value: new THREE.Color('#c9a878') },
+    uStitch: { value: new THREE.Vector4(0.2, 148.0, 0.014, 0.026) },
     uStitchOn: { value: 1.0 },
-    uPolish: { value: 0.7 },
-    uRailWear: { value: 0.14 },
-    uArcAspect: { value: 12.0 },
+    uPolish: { value: 0.85 },
+    uRailWear: { value: 0.12 },
+    uArcAspect: { value: 7.4 },
   };
 
   const railMat = new THREE.MeshPhysicalMaterial({
     color: new THREE.Color(skin.railColor),
-    roughness: 0.62,
+    roughness: 0.64,
     metalness: 0,
-    clearcoat: 0.4,
-    clearcoatRoughness: 0.55,
+    clearcoat: 0.42,
+    clearcoatRoughness: 0.36,
     normalMap: tex.get('leather-normal'),
-    normalScale: new THREE.Vector2(0.85, 0.85),
+    normalScale: new THREE.Vector2(0.5, 0.5),
     roughnessMap: tex.get('leather-rough'),
     aoMap: tex.get('rail-ao'),
     aoMapIntensity: 0.9,
-    envMapIntensity: 0.75,
+    envMapIntensity: 1.45,
     dithering: true,
   });
-  railMat.normalMap!.repeat.set(22, 3);
-  railMat.roughnessMap!.repeat.set(22, 3);
+  railMat.normalMap!.repeat.set(20, 3);
+  railMat.roughnessMap!.repeat.set(20, 3);
   railMat.aoMap!.repeat.set(1, 1);
   railMat.aoMap!.wrapS = THREE.ClampToEdgeWrapping;
   railMat.onBeforeCompile = (shader) => {
@@ -645,16 +647,16 @@ export function createTable(env: THREE.Texture | null): TableHandle {
     roughness: trimMeta.roughness,
     roughnessMap: tex.get('metal-rough'),
     normalMap: tex.get('metal-normal'),
-    normalScale: new THREE.Vector2(0.3, 0.3),
+    normalScale: new THREE.Vector2(0.18, 0.18),
     anisotropy: trimMeta.aniso,
     anisotropyRotation: 0,
-    envMapIntensity: 1.6,
+    envMapIntensity: 0.34,
     dithering: true,
   });
   trimMat.roughnessMap!.repeat.set(6, 1);
   trimMat.normalMap!.repeat.set(6, 1);
 
-  const beadR = 0.011;
+  const beadR = 0.017;
   const beadProfile: ProfilePoint[] = [];
   for (let i = 0; i <= 10; i++) {
     const a = Math.PI * (1 - i / 10);
@@ -685,7 +687,7 @@ export function createTable(env: THREE.Texture | null): TableHandle {
 
   // ── skirt + pedestal ───────────────────────────────────────────────
   const bodyMat = new THREE.MeshPhysicalMaterial({
-    color: new THREE.Color('#0d0f14'),
+    color: new THREE.Color('#0b0d12'),
     roughness: 0.44,
     metalness: 0.25,
     clearcoat: 0.3,
@@ -781,11 +783,11 @@ export function createTable(env: THREE.Texture | null): TableHandle {
         railMat.map = null;
         railMat.normalMap = t.get('leather-normal');
         railMat.roughnessMap = t.get('leather-rough');
-        railMat.normalScale.set(0.85, 0.85);
-        railMat.roughness = 0.62;
+        railMat.normalScale.set(0.5, 0.5);
+        railMat.roughness = 0.64;
         railMat.metalness = 0;
-        railMat.clearcoat = 0.4;
-        railMat.clearcoatRoughness = 0.55;
+        railMat.clearcoat = 0.42;
+        railMat.clearcoatRoughness = 0.36;
         railMat.sheen = 0;
         railUniforms.uStitchOn.value = 1;
         railUniforms.uGrainScale.value = 34;
@@ -892,7 +894,7 @@ export function createTable(env: THREE.Texture | null): TableHandle {
       quality = tier;
       const low = tier === 'low';
       feltMat.sheen = low ? 0 : 0.85;
-      railMat.clearcoat = low ? 0 : skin.railMaterial === 'wood' ? 0.95 : 0.4;
+      railMat.clearcoat = low ? 0 : skin.railMaterial === 'wood' ? 0.95 : 0.42;
       trimMat.anisotropy = low ? 0 : (TRIM_METALS[skin.trimMetal] ?? TRIM_METALS.gold).aniso;
       contact.visible = tier !== 'low';
       feltUniforms.uWear.value = low ? 0.08 : 0.16;

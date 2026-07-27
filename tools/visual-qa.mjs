@@ -26,7 +26,19 @@ const DEVICES = {
 /** route id → the actions needed to reach and settle that screen */
 export const SCENES = {
   lobby: { route: 'lobby', settle: 900 },
-  table: { route: 'table', settle: 2600 },
+  // The table opens behind a buy-in sheet. Confirm it, then let a hand run so
+  // the capture shows real gameplay rather than a modal.
+  table: {
+    route: 'table',
+    settle: 1200,
+    after: async (page) => {
+      const sit = page.getByText(/sit down/i).first();
+      if (await sit.isVisible().catch(() => false)) {
+        await sit.click({ timeout: 4000 }).catch(() => {});
+      }
+      await page.waitForTimeout(6500);
+    },
+  },
   feed: { route: 'feed', settle: 900 },
   store: { route: 'store', settle: 900 },
   pass: { route: 'pass', settle: 900 },
@@ -135,6 +147,7 @@ async function main() {
       (window).__royale?.nav?.(route);
     }, scene.route);
     await page.waitForTimeout(scene.settle);
+    if (scene.after) await scene.after(page);
     const file = path.join(outDir, `${id}.png`);
     await page.screenshot({ path: file });
     captured.push(file);

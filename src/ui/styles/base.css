@@ -47,6 +47,14 @@ body {
   display: block;
   z-index: var(--z-stage);
   touch-action: none;
+  opacity: 1;
+  transition: opacity var(--d-slow) var(--ease-out);
+}
+
+/* Off-table routes own their own background; the felt must not bleed through. */
+#stage.is-hidden {
+  opacity: 0;
+  pointer-events: none;
 }
 
 #ui-root {

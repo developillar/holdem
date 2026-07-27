@@ -34,6 +34,20 @@ async function boot() {
 
     renderer.start();
 
+    // The 3D stage belongs to the table. Everywhere else it would show through
+    // the screen's own background as a stray felt arc, so it cross-fades out
+    // and stops drawing — which also hands the GPU back to the UI.
+    let stageShown = false;
+    const setStageVisible = (on: boolean) => {
+      if (on === stageShown) return;
+      stageShown = on;
+      canvas.classList.toggle('is-hidden', !on);
+      if (on) renderer.start();
+      else setTimeout(() => !stageShown && renderer.stop(), 420);
+    };
+    setStageVisible(false);
+    bus.on('nav:route', ({ route }) => setStageVisible(route === 'table'));
+
     await new Promise((r) => setTimeout(r, 220));
     progress(100);
     bootEl.classList.add('is-done');

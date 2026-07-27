@@ -87,8 +87,16 @@ async function main() {
     throw new Error('preview server never came up');
   }
 
+  // Prefer the full chromium build — the headless shell lacks the GPU paths
+  // the 3D stage needs. Fall back to whatever Playwright resolves on its own.
+  const CHROME_CANDIDATES = [
+    '/opt/pw-browsers/chromium-1194/chrome-linux/chrome',
+    '/opt/pw-browsers/chromium/chrome-linux/chrome',
+  ];
+  const executablePath = CHROME_CANDIDATES.find((p) => existsSync(p));
+
   const browser = await chromium.launch({
-    executablePath: '/opt/pw-browsers/chromium/chrome-linux/chrome',
+    ...(executablePath ? { executablePath } : {}),
     args: ['--use-gl=swiftshader', '--enable-unsafe-swiftshader', '--disable-dev-shm-usage', '--no-sandbox'],
   });
 

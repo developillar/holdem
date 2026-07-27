@@ -112,7 +112,7 @@ function load(): Prefs {
       const v = saved[k];
       if (v === undefined || v === null) continue;
       if (typeof v === typeof DEFAULT_PREFS[k]) {
-        (out as Record<string, unknown>)[k] = v;
+        (out as unknown as Record<string, unknown>)[k] = v;
       }
     }
     if (typeof saved.breakUntil === 'number') out.breakUntil = saved.breakUntil;
@@ -180,7 +180,7 @@ export function setPrefs(patch: Partial<Prefs>): void {
     const v = patch[k];
     if (v === undefined) continue;
     if (Object.is(next[k], v)) continue;
-    (next as Record<string, unknown>)[k] = v;
+    (next as unknown as Record<string, unknown>)[k] = v;
     changed = true;
   }
   if (!changed) return;

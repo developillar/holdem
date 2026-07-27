@@ -23,6 +23,7 @@ import type {
   CardId,
   HandCategory,
   Pot,
+  SeatStatus,
   ShowdownResult,
   StakeId,
   TableState,
@@ -414,6 +415,18 @@ export function mount(container: HTMLElement, params: TableScreenParams = {}): T
     return topLimit;
   }
 
+  /** null means "you can arm a pre-action"; anything else replaces the row. */
+  function idleMessageFor(status: SeatStatus): string | null {
+    switch (status) {
+      case 'folded': return 'You folded — next hand shortly';
+      case 'sitting-out': return 'Sitting out — rejoin from the menu';
+      case 'busted': return 'Out of chips — add more to keep playing';
+      case 'waiting': return 'Dealt in on the next hand';
+      case 'empty': return 'Take a seat to join the action';
+      default: return null;
+    }
+  }
+
   // ── pot anchor tracking
   const stopFrame = onFrame((dt) => {
     measureAcc += dt;
@@ -593,6 +606,8 @@ export function mount(container: HTMLElement, params: TableScreenParams = {}): T
         handStrength.setVisible(hero.holeCards.length > 0 && next.street !== 'showdown');
       }
       actionBar.setContext(barContext());
+      // Pre-actions only make sense while you still have a hand to play.
+      if (seated && hero && !hero.isTurn) actionBar.setIdleMessage(idleMessageFor(hero.status));
       toolbar.setCanRebuy(next.format === 'cash' && (hero?.stack ?? 0) < stake.maxBuyIn);
       refreshCentre();
     }),

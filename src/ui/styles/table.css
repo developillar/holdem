@@ -1401,6 +1401,7 @@
 }
 
 .ab.is-idle .ab__idle { display: flex; }
+.ab.is-turn .ab__idle { display: none; }
 
 /* ───────────────────────────── keypad ───────────────────────────── */
 

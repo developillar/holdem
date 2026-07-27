@@ -24,7 +24,7 @@ export interface ModeSelectorOpts {
   onChange(mode: LobbyMode): void;
 }
 
-export interface ModeSelectorEl extends HTMLElement {
+export interface ModeSelectorEl extends HTMLDivElement {
   setValue(mode: LobbyMode, silent?: boolean): void;
   setLive(counts: Record<LobbyMode, number>): void;
   value(): LobbyMode;
@@ -107,8 +107,8 @@ function sngArt(): SVGSVGElement {
         },
       }),
     ),
-    h('path', { attrs: { transform: 'translate(78 4) scale(0.82)', d: 'M8 3.8h8v5.6a4 4 0 01-8 0V3.8z', fill: 'url(#md-g3)' } }),
-    h('path', { attrs: { transform: 'translate(78 4) scale(0.82)', d: 'M8 5.4H5.5A1.5 1.5 0 004 6.9c0 2.4 1.8 4.3 4.2 4.6M16 5.4h2.5A1.5 1.5 0 0120 6.9c0 2.4-1.8 4.3-4.2 4.6', fill: 'none', stroke: 'url(#md-g3)', 'stroke-width': 1.8, 'stroke-linecap': 'round' } }),
+    h('path', { attrs: { transform: 'translate(78 10) scale(0.82)', d: 'M8 3.8h8v5.6a4 4 0 01-8 0V3.8z', fill: 'url(#md-g3)' } }),
+    h('path', { attrs: { transform: 'translate(78 10) scale(0.82)', d: 'M8 5.4H5.5A1.5 1.5 0 004 6.9c0 2.4 1.8 4.3 4.2 4.6M16 5.4h2.5A1.5 1.5 0 0120 6.9c0 2.4-1.8 4.3-4.2 4.6', fill: 'none', stroke: 'url(#md-g3)', 'stroke-width': 1.8, 'stroke-linecap': 'round' } }),
   );
 }
 

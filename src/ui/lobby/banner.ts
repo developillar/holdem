@@ -21,10 +21,9 @@
 import { h, on } from '../dom.ts';
 import { icon } from '../components/icons.ts';
 import { haptic, reduceMotion, spring } from '../components/util.ts';
-import { money } from '../../core/stakes.ts';
 import { STAKES } from '../../core/stakes.ts';
 import type { LobbySnapshot } from './data.ts';
-import { clockMs, coarseMs } from './data.ts';
+import { cash, clockMs, coarseMs } from './data.ts';
 
 export type BannerAction = 'pass' | 'bomb' | 'sng';
 
@@ -172,7 +171,7 @@ function sparkField(count: number, seedBase: number): HTMLElement {
 }
 
 /** Nine seat dots for the SNG slide; `fill()` lights the claimed ones. */
-function seatRing(): { el: SVGSVGElement; fill(n: number): void } {
+function seatRing(): { el: HTMLElement; fill(n: number): void } {
   const dots: SVGCircleElement[] = [];
   const svg = h('svg', {
     class: 'bn__seatring',
@@ -199,8 +198,9 @@ function seatRing(): { el: SVGSVGElement; fill(n: number): void } {
     dots.push(c);
     svg.appendChild(c);
   }
+  const wrap = h('div', { class: 'bn__ringwrap' }, svg);
   return {
-    el: svg,
+    el: wrap,
     fill(n) {
       dots.forEach((d, i) => {
         const on = i < n;
@@ -216,7 +216,7 @@ function seatRing(): { el: SVGSVGElement; fill(n: number): void } {
 interface SlideRefs {
   el: HTMLElement;
   countdown?: HTMLElement;
-  seats?: { el: SVGSVGElement; fill(n: number): void };
+  seats?: { el: HTMLElement; fill(n: number): void };
   seatText?: HTMLElement;
   meta?: HTMLElement;
   bombStake?: HTMLElement;
@@ -306,6 +306,9 @@ function bombSlide(onTap: () => void): SlideRefs {
 
 function sngSlide(onTap: () => void): SlideRefs {
   const ring = seatRing();
+  ring.el.appendChild(
+    h('span', { class: 'bn__prize' }, icon('trophy', { size: 22 }), h('b', { class: 'tnum' }, cash(45))),
+  );
   const seatText = h('b', { class: 'tnum' }, '0/9');
   const el = slideShell(
     'sng',
@@ -317,14 +320,13 @@ function sngSlide(onTap: () => void): SlideRefs {
       layer(0.18, h('span', { class: 'bn__wash bn__wash--felt' })),
       layer(0.4, rays(12, '#34d399', 0.1)),
       layer(0.72, sparkField(9, 0x5eed)),
-      layer(1.25, ring.el),
-      layer(1.6, h('span', { class: 'bn__prize' }, icon('trophy', { size: 26 }), h('b', null, money(45)))),
+      layer(1.3, ring.el),
     ],
     h(
       'span',
       { class: 'bn__chiprow' },
       h('span', { class: 'bn__tag bn__tag--good' }, icon('users', { size: 12 }), seatText, ' seated'),
-      h('span', { class: 'bn__tag' }, money(5), ' buy-in'),
+      h('span', { class: 'bn__tag' }, cash(5), ' buy-in'),
     ),
     onTap,
   );
@@ -377,6 +379,7 @@ export function BannerCarousel(opts: BannerOpts): BannerEl {
   let dragging = -1;
   let paused = false;
   let autoAt = performance.now() + AUTO_MS;
+  let autoSpan = AUTO_MS;
   let raf = 0;
 
   const measure = () => {
@@ -402,7 +405,10 @@ export function BannerCarousel(opts: BannerOpts): BannerEl {
   function goTo(i: number, user: boolean): void {
     index = ((i % n) + n) % n;
     motion.set(index);
-    autoAt = performance.now() + (user ? AUTO_MS * 1.7 : AUTO_MS);
+    // A manual swipe buys the slide extra dwell time; the indicator has to
+    // fill across that longer span or it sits empty and looks broken.
+    autoSpan = user ? AUTO_MS * 1.7 : AUTO_MS;
+    autoAt = performance.now() + autoSpan;
     dots.forEach((d, k) => {
       d.setAttribute('aria-selected', k === index ? 'true' : 'false');
       d.classList.toggle('is-on', k === index);
@@ -419,7 +425,7 @@ export function BannerCarousel(opts: BannerOpts): BannerEl {
       return;
     }
     const left = autoAt - now;
-    active.style.setProperty('--p', String(Math.max(0, Math.min(1, 1 - left / AUTO_MS))));
+    active.style.setProperty('--p', String(Math.max(0, Math.min(1, 1 - left / autoSpan))));
     if (left <= 0) goTo(index + 1, false);
   };
 

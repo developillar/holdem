@@ -28,8 +28,9 @@ export class Rng {
 
   /** uint32 */
   nextU32(): number {
-    const r = (Math.imul(this.s1 * 5, 1) << 7) | 0;
-    const result = (Math.imul((r << 7) | (r >>> 25), 9) >>> 0) as number;
+    // xoshiro128** scrambler: rotl(s1 * 5, 7) * 9
+    const r = Math.imul(this.s1, 5);
+    const result = Math.imul(((r << 7) | (r >>> 25)) >>> 0, 9) >>> 0;
     const t = (this.s1 << 9) >>> 0;
     this.s2 ^= this.s0;
     this.s3 ^= this.s1;

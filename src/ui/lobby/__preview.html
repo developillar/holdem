@@ -1,0 +1,92 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>Royale — lobby preview</title>
+    <style>
+      html,
+      body {
+        margin: 0;
+        height: 100%;
+        background: #05060a;
+      }
+      #ui-root {
+        position: fixed;
+        inset: 0;
+        overflow: hidden;
+      }
+      .rt-screen {
+        position: absolute;
+        inset: 0;
+      }
+      :root {
+        --chrome-t: 8px;
+        --chrome-b: 12px;
+      }
+      #switch {
+        position: fixed;
+        z-index: 999;
+        right: 8px;
+        bottom: 8px;
+        display: flex;
+        gap: 6px;
+      }
+      #switch button {
+        font: 600 11px system-ui;
+        color: #dfe4ee;
+        background: #1e2433;
+        border: 1px solid #3b4356;
+        border-radius: 8px;
+        padding: 6px 10px;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="ui-root"><section class="rt-screen" id="host"></section></div>
+    <div id="switch">
+      <button data-s="lobby">Lobby</button>
+      <button data-s="settings">Settings</button>
+    </div>
+    <script type="module">
+      import '../styles/index.css';
+      import { setSheetHost } from '../components/sheet.ts';
+      import { setModalHost } from '../components/modal.ts';
+      import { mountToastHost } from '../components/toast.ts';
+
+      const hostEl = document.getElementById('ui-root');
+      const sheets = document.createElement('div');
+      const modals = document.createElement('div');
+      const toasts = document.createElement('div');
+      for (const n of [sheets, modals, toasts]) {
+        n.style.cssText = 'position:fixed;inset:0;z-index:60;pointer-events:none';
+        hostEl.appendChild(n);
+      }
+      sheets.style.pointerEvents = 'none';
+      setSheetHost(sheets);
+      setModalHost(modals);
+      mountToastHost(toasts);
+      new MutationObserver(() => {
+        sheets.style.pointerEvents = sheets.childElementCount ? 'auto' : 'none';
+        modals.style.pointerEvents = modals.childElementCount ? 'auto' : 'none';
+      }).observe(sheets, { childList: true });
+
+      let inst = null;
+      async function show(which) {
+        inst?.unmount?.();
+        const host = document.getElementById('host');
+        host.textContent = '';
+        const mod = which === 'settings'
+          ? await import('../screens/settings.ts')
+          : await import('../screens/lobby.ts');
+        inst = mod.mount(host) ?? null;
+      }
+      document.getElementById('switch').addEventListener('click', (e) => {
+        const b = e.target.closest('button');
+        if (b) show(b.dataset.s);
+      });
+      show('lobby');
+      window.__show = show;
+    </script>
+  </body>
+</html>

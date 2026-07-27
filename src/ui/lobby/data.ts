@@ -17,7 +17,7 @@
  *   feed.dispose();
  */
 import { Rng } from '../../core/rng.ts';
-import { STAKE_LIST } from '../../core/stakes.ts';
+import { STAKE_LIST, money } from '../../core/stakes.ts';
 import type { GameVariant, LobbyTable, Stake, StakeId, TableFormat } from '../../core/types.ts';
 
 export interface StakeLive {
@@ -117,7 +117,7 @@ export function tableName(id: string): string {
     hv ^= id.charCodeAt(i);
     hv = Math.imul(hv, 0x01000193) >>> 0;
   }
-  return `${ROOM_NAMES[hv % ROOM_NAMES.length]} ${((hv >> 9) % 9) + 1}`;
+  return `${ROOM_NAMES[hv % ROOM_NAMES.length]} ${((hv >>> 9) % 9) + 1}`;
 }
 
 // ── generation ───────────────────────────────────────────────────────
@@ -197,7 +197,11 @@ function computeTables(now: number, load: number): LobbyTable[] {
       avgPot: Math.round(potBb * stake.bb * 100) / 100,
       handsPerHour: Math.round((58 + (1 - looseness) * 26) * t.speed * (t.seatsTotal === 6 ? 1.18 : 1)),
       looseness,
-      bombPotIn: t.bomb ? Math.max(0, BOMB_PERIOD_MS - (now % BOMB_PERIOD_MS)) : null,
+      // Each bomb-pot room runs on its own phase of the global cadence, so
+      // the lobby never shows a column of identical countdowns.
+      bombPotIn: t.bomb
+        ? BOMB_PERIOD_MS - ((now + (t.noise % BOMB_PERIOD_MS)) % BOMB_PERIOD_MS)
+        : null,
     };
   }
   return out;
@@ -333,7 +337,19 @@ export function coarseMs(ms: number): string {
   return `${hrs}h ${m}m`;
 }
 
-/** 12480 → "12.5K". Player counts only; money uses core/stakes `money()`. */
+/**
+ * `money()` from core keeps a fixed precision, which reads as `$25.0` for a
+ * round number. The lobby shows a lot of round numbers, so trim the dead
+ * zeros — `$25.0` → `$25`, `$4.00` → `$4`, `$1.32` stays put.
+ */
+export function cash(n: number): string {
+  const s = money(n);
+  // Cents matter below a dollar — never trim those.
+  if (Math.abs(n) < 1 || !s.includes('.')) return s;
+  return s.replace(/(\.\d*?)0+(?=K?$)/, '$1').replace(/\.(?=K?$)/, '');
+}
+
+/** 12480 → "12.5K". Player counts only; money uses `cash()` above. */
 export function compactCount(n: number): string {
   if (n >= 10_000) return `${(n / 1000).toFixed(1)}K`;
   if (n >= 1000) return `${(n / 1000).toFixed(2)}K`;

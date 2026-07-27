@@ -1,0 +1,1089 @@
+/**
+ * ROYALE — fx.css
+ * ─────────────────────────────────────────────────────────────
+ * Every pixel the DOM effects layer paints. Loaded as a side-effect
+ * import from `src/fx/index.ts`, so it is in the bundle graph and
+ * needs no entry in `index.css`.
+ *
+ * Rules this file holds itself to:
+ *  • Only `transform`, `opacity`, `scale` and `background-position`
+ *    ever animate. No width, no top/left, no animated filter.
+ *  • `will-change` appears exactly where an element is guaranteed to
+ *    animate for its whole (short) life, and nowhere else. Particle
+ *    nodes are detached while pooled, so they hold no layer at rest.
+ *  • `contain` on the root stops any of this from invalidating the
+ *    UI layer's layout.
+ *  • Sprites are gradients and clip-paths — no images, no emoji.
+ */
+
+/* ═══════════════════════════════════════════════════════════
+   Root & layers
+   ═══════════════════════════════════════════════════════════ */
+
+#fx-root,
+.fx-root {
+  contain: layout style paint;
+  /* Never let an effect become a scroll surface or a hit target. */
+  touch-action: none;
+}
+
+.fx-layer {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  transform: translateZ(0);
+}
+
+/* Paper and coins tumble in real 3D; the perspective origin sits a
+   little above centre so pieces rake toward the player. */
+.fx-layer--particles,
+.fx-layer--coins {
+  perspective: 900px;
+  perspective-origin: 50% 38%;
+}
+
+.fx-layer--text,
+.fx-layer--banner {
+  perspective: 900px;
+}
+
+/* ═══════════════════════════════════════════════════════════
+   Particles
+   ═══════════════════════════════════════════════════════════ */
+
+.fx-p {
+  position: absolute;
+  left: 0;
+  top: 0;
+  display: block;
+  pointer-events: none;
+  will-change: transform, opacity;
+  transform-origin: 50% 50%;
+  backface-visibility: visible;
+}
+
+/* ── dot: soft coloured mote ─────────────────────────────── */
+.fx-p--dot {
+  border-radius: 50%;
+  background: radial-gradient(circle at 42% 36%, #fff 0%, var(--fx-c, #edc96b) 42%, rgba(0, 0, 0, 0) 72%);
+}
+
+/* ── spark: a hot pinpoint with a bloom halo ─────────────── */
+.fx-p--spark {
+  border-radius: 50%;
+  background: radial-gradient(circle, #fff 0%, var(--fx-c, #fdf3d0) 34%, rgba(0, 0, 0, 0) 70%);
+  box-shadow: 0 0 8px 1px var(--fx-c, #fdf3d0);
+}
+
+/* ── streak: a motion dash, brightest in the middle ──────── */
+.fx-p--streak {
+  border-radius: 999px;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0) 0%, var(--fx-c, #edc96b) 46%, rgba(255, 255, 255, 0) 100%);
+}
+
+/* ── confetti: two-sided paper ────────────────────────────
+   The element paints the FRONT face and hides itself when it
+   turns away; its ::before is the BACK face, pre-rotated 180°.
+   Two colours, real tumbling, and still exactly one DOM node. */
+.fx-p--confetti,
+.fx-p--ribbon {
+  transform-style: preserve-3d;
+  backface-visibility: hidden;
+  border-radius: 1.5px;
+  background:
+    linear-gradient(115deg, rgba(255, 255, 255, 0.42) 0%, rgba(255, 255, 255, 0) 46%),
+    linear-gradient(180deg, var(--fx-c, #edc96b), var(--fx-c, #edc96b));
+  box-shadow: 0 1px 3px rgba(3, 5, 10, 0.4);
+}
+
+.fx-p--confetti::before,
+.fx-p--ribbon::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  backface-visibility: hidden;
+  transform: rotateY(180deg);
+  background:
+    linear-gradient(115deg, rgba(255, 255, 255, 0.16) 0%, rgba(0, 0, 0, 0.18) 60%),
+    linear-gradient(180deg, var(--fx-c2, #94690f), var(--fx-c2, #94690f));
+}
+
+.fx-p--ribbon {
+  border-radius: 999px;
+}
+
+/* ── chip: a real casino chip at 16px ────────────────────── */
+.fx-p--chip {
+  border-radius: 50%;
+  background:
+    radial-gradient(circle at 38% 28%, rgba(255, 255, 255, 0.62) 0%, rgba(255, 255, 255, 0) 52%),
+    radial-gradient(circle at 50% 50%, var(--fx-c, #edc96b) 0 27%, rgba(0, 0, 0, 0) 28%),
+    radial-gradient(circle at 50% 50%, rgba(9, 12, 19, 0.92) 0 40%, rgba(0, 0, 0, 0) 41%),
+    repeating-conic-gradient(
+      from 10deg,
+      var(--fx-c, #edc96b) 0 20deg,
+      rgba(9, 12, 19, 0.9) 20deg 45deg
+    );
+  box-shadow:
+    inset 0 0 0 1px rgba(255, 255, 255, 0.34),
+    inset 0 -2px 3px rgba(0, 0, 0, 0.42),
+    0 2px 6px rgba(3, 5, 10, 0.52);
+}
+
+/* ── coin: struck metal with a rim and a rake of light ───── */
+.fx-p--coin {
+  border-radius: 50%;
+  background:
+    radial-gradient(circle at 34% 26%, rgba(255, 253, 240, 0.9) 0%, rgba(255, 255, 255, 0) 48%),
+    linear-gradient(148deg, var(--fx-c, #f6e0a0) 0%, #8a6a12 58%, var(--fx-c, #f6e0a0) 100%);
+  box-shadow:
+    inset 0 0 0 1.2px rgba(255, 255, 255, 0.46),
+    inset 0 -1.5px 2px rgba(0, 0, 0, 0.42),
+    0 1px 5px rgba(3, 5, 10, 0.5);
+}
+
+/* ── gem: a faceted brilliant, cut with clip-path ────────── */
+.fx-p--gem {
+  clip-path: polygon(50% 0%, 100% 34%, 78% 100%, 22% 100%, 0% 34%);
+  background:
+    linear-gradient(200deg, rgba(255, 255, 255, 0.72) 0%, rgba(255, 255, 255, 0) 42%),
+    linear-gradient(160deg, var(--fx-c, #47a9ff) 0%, rgba(6, 12, 24, 0.72) 96%);
+}
+
+.fx-p--gem::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  clip-path: polygon(50% 0%, 78% 34%, 50% 46%, 22% 34%);
+  background: rgba(255, 255, 255, 0.42);
+}
+
+/* ── star: a four-point sparkle ──────────────────────────── */
+.fx-p--star {
+  clip-path: polygon(
+    50% 0%,
+    58% 42%,
+    100% 50%,
+    58% 58%,
+    50% 100%,
+    42% 58%,
+    0% 50%,
+    42% 42%
+  );
+  background: radial-gradient(circle, #fff 0%, var(--fx-c, #fdf3d0) 44%, rgba(255, 255, 255, 0) 88%);
+}
+
+/* ── ring / glow ─────────────────────────────────────────── */
+.fx-p--ring {
+  border-radius: 50%;
+  border: 1.5px solid var(--fx-c, #edc96b);
+  box-shadow: 0 0 10px 0 var(--fx-c, #edc96b);
+}
+
+.fx-p--glow {
+  border-radius: 50%;
+  background: radial-gradient(circle, var(--fx-c, #edc96b) 0%, rgba(0, 0, 0, 0) 66%);
+}
+
+/* Coins and chips drag a faint aura so a stream of them reads as one
+   ribbon of light rather than as separate dots. */
+.fx-p--coin::after,
+.fx-p--chip::after,
+.fx-p--gem::after {
+  content: '';
+  position: absolute;
+  inset: -55%;
+  z-index: -1;
+  border-radius: 50%;
+  background: radial-gradient(circle, var(--fx-c, #edc96b) 0%, rgba(0, 0, 0, 0) 62%);
+  opacity: 0.26;
+}
+
+/* ═══════════════════════════════════════════════════════════
+   Specular sweep (shine)
+   ═══════════════════════════════════════════════════════════ */
+
+.fx-shine {
+  position: absolute;
+  inset: 0;
+  z-index: 3;
+  overflow: hidden;
+  border-radius: inherit;
+  pointer-events: none;
+}
+
+/* The band is 200% of the host's width so the travel distance is a
+   pure percentage of ITSELF — no measurement, no JS, works at any
+   host size. `skewX` (not rotate) keeps full vertical coverage. */
+.fx-shine::after {
+  content: '';
+  position: absolute;
+  top: -8%;
+  bottom: -8%;
+  left: -50%;
+  width: 200%;
+  opacity: 0;
+  background: linear-gradient(
+    90deg,
+    rgba(255, 255, 255, 0) calc(50% - var(--shine-w, 13%)),
+    var(--shine-c, #fdf3d0) 50%,
+    rgba(255, 255, 255, 0) calc(50% + var(--shine-w, 13%))
+  );
+  transform: translate3d(-62%, 0, 0) skewX(var(--shine-a, 18deg));
+  will-change: transform, opacity;
+  animation: fxShineLoop var(--shine-int, 4200ms) linear var(--shine-delay, 0ms) infinite;
+}
+
+.fx-shine.is-manual::after {
+  animation: none;
+}
+
+.fx-shine.is-idle::after {
+  animation-play-state: paused;
+}
+
+.fx-shine.is-once::after {
+  animation: fxShineOnce 900ms cubic-bezier(0.2, 0.9, 0.15, 1) 1 both;
+}
+
+@keyframes fxShineLoop {
+  0% {
+    transform: translate3d(-62%, 0, 0) skewX(var(--shine-a, 18deg));
+    opacity: 0;
+  }
+  3% {
+    opacity: var(--shine-o, 0.72);
+  }
+  15% {
+    opacity: var(--shine-o, 0.72);
+  }
+  20% {
+    transform: translate3d(62%, 0, 0) skewX(var(--shine-a, 18deg));
+    opacity: 0;
+  }
+  100% {
+    transform: translate3d(62%, 0, 0) skewX(var(--shine-a, 18deg));
+    opacity: 0;
+  }
+}
+
+@keyframes fxShineOnce {
+  0% {
+    transform: translate3d(-62%, 0, 0) skewX(var(--shine-a, 18deg));
+    opacity: 0;
+  }
+  14% {
+    opacity: var(--shine-o, 0.72);
+  }
+  78% {
+    opacity: var(--shine-o, 0.72);
+  }
+  100% {
+    transform: translate3d(62%, 0, 0) skewX(var(--shine-a, 18deg));
+    opacity: 0;
+  }
+}
+
+/* ═══════════════════════════════════════════════════════════
+   Screen effects
+   ═══════════════════════════════════════════════════════════ */
+
+.fx-flash {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  will-change: opacity;
+}
+
+.fx-vignette {
+  position: absolute;
+  inset: -4%;
+  opacity: 0;
+  will-change: opacity, transform;
+  background:
+    radial-gradient(112% 78% at 50% 50%, rgba(0, 0, 0, 0) 36%, rgba(4, 5, 9, 0.66) 98%),
+    radial-gradient(124% 92% at 50% 50%, rgba(0, 0, 0, 0) 44%, var(--fx-vig-c, #f6534f) 132%);
+}
+
+.fx-vignette--hold {
+  transition: opacity 420ms var(--ease-out);
+}
+
+/* One element, one layer: the wash IS the spread shadow, so the
+   "hole" is genuinely transparent and only opacity animates. */
+.fx-dim {
+  position: absolute;
+  opacity: 0;
+  will-change: opacity;
+  box-shadow:
+    0 0 0 100vmax rgb(3 5 10 / var(--fx-dim-o, 0.74)),
+    0 0 0 1px var(--fx-dim-ring, rgba(237, 201, 107, 0.34)),
+    0 0 40px 8px rgba(217, 169, 58, 0.18),
+    inset 0 0 24px rgba(237, 201, 107, 0.1);
+}
+
+.fx-dim.is-full {
+  box-shadow: 0 0 0 100vmax rgb(3 5 10 / var(--fx-dim-o, 0.74));
+}
+
+.fx-wave {
+  position: absolute;
+  border-radius: 50%;
+  opacity: 0;
+  will-change: transform, opacity;
+  border: var(--fx-wave-th, 2px) solid var(--fx-c, #edc96b);
+  box-shadow:
+    0 0 18px 0 var(--fx-c, #edc96b),
+    inset 0 0 22px -4px var(--fx-c, #edc96b);
+}
+
+.fx-swell {
+  position: absolute;
+  width: 300px;
+  height: 300px;
+  border-radius: 50%;
+  opacity: 0;
+  will-change: transform, opacity;
+  background: radial-gradient(circle, var(--fx-c, #edc96b) 0%, rgba(0, 0, 0, 0) 64%);
+  mix-blend-mode: plus-lighter;
+}
+
+.fx-sweep {
+  position: absolute;
+  top: -20%;
+  bottom: -20%;
+  left: 0;
+  width: 46%;
+  opacity: 0;
+  will-change: transform, opacity;
+  transform: translate3d(-120%, 0, 0);
+  background: linear-gradient(
+    100deg,
+    rgba(255, 255, 255, 0) 0%,
+    var(--fx-c, #f6e0a0) 50%,
+    rgba(255, 255, 255, 0) 100%
+  );
+  mix-blend-mode: plus-lighter;
+}
+
+/* Screen shake. The shell owns `#ui-root`'s transform, so we never
+   write it directly — three custom properties plus this attribute
+   selector, and removing the attribute restores the element exactly. */
+#ui-root[data-fx-shake] {
+  will-change: transform;
+  transform: translate3d(var(--fx-shake-x, 0px), var(--fx-shake-y, 0px), 0) rotate(var(--fx-shake-r, 0deg));
+}
+
+/* ═══════════════════════════════════════════════════════════
+   Tactile pulses (applied to elements owned by other modules —
+   they animate `scale`, not `transform`, so nothing is clobbered)
+   ═══════════════════════════════════════════════════════════ */
+
+.fx-pop {
+  animation: fxPop 460ms cubic-bezier(0.34, 1.56, 0.64, 1) both;
+}
+
+.fx-gain {
+  animation: fxGain 520ms cubic-bezier(0.34, 1.56, 0.64, 1) both;
+}
+
+.fx-loss {
+  animation: fxLoss 420ms cubic-bezier(0.2, 0.9, 0.15, 1) both;
+}
+
+@keyframes fxPop {
+  0% {
+    scale: 1;
+  }
+  30% {
+    scale: 1.13;
+  }
+  62% {
+    scale: 0.978;
+  }
+  100% {
+    scale: 1;
+  }
+}
+
+@keyframes fxGain {
+  0% {
+    scale: 1;
+  }
+  22% {
+    scale: 1.17;
+  }
+  46% {
+    scale: 0.965;
+  }
+  74% {
+    scale: 1.03;
+  }
+  100% {
+    scale: 1;
+  }
+}
+
+@keyframes fxLoss {
+  0% {
+    scale: 1;
+    translate: 0 0;
+  }
+  25% {
+    scale: 0.94;
+    translate: -3px 0;
+  }
+  55% {
+    translate: 3px 0;
+  }
+  100% {
+    scale: 1;
+    translate: 0 0;
+  }
+}
+
+/* ═══════════════════════════════════════════════════════════
+   Floating text
+   ═══════════════════════════════════════════════════════════ */
+
+.fx-float {
+  position: absolute;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  white-space: nowrap;
+  will-change: transform, opacity;
+  transform: translate(-50%, -50%);
+  animation: fxFloat var(--fx-ms, 1350ms) cubic-bezier(0.16, 1, 0.3, 1) var(--fx-delay, 0ms) both;
+}
+
+.fx-float__t {
+  font: 800 26px/1 var(--f-num);
+  letter-spacing: -0.028em;
+  font-variant-numeric: tabular-nums;
+  color: transparent;
+  background-image: linear-gradient(180deg, #fff 0%, var(--fx-c, #edc96b) 58%, var(--fx-c, #edc96b) 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  /* Static element inside an animating parent — rasterised once, then
+     just moved by the compositor. */
+  filter: drop-shadow(0 1px 0 rgba(0, 0, 0, 0.55)) drop-shadow(0 3px 12px rgba(0, 0, 0, 0.5));
+}
+
+.fx-float__g {
+  width: 15px;
+  height: 15px;
+  color: var(--fx-c, #edc96b);
+  filter: drop-shadow(0 1px 3px rgba(0, 0, 0, 0.6));
+}
+
+.fx-float--sm .fx-float__t {
+  font-size: 19px;
+}
+.fx-float--sm .fx-float__g {
+  width: 12px;
+  height: 12px;
+}
+.fx-float--lg .fx-float__t {
+  font-size: 34px;
+  letter-spacing: -0.034em;
+}
+.fx-float--lg .fx-float__g {
+  width: 19px;
+  height: 19px;
+}
+
+.fx-float.is-static {
+  animation: none;
+  opacity: 1;
+}
+
+@keyframes fxFloat {
+  0% {
+    transform: translate(-50%, -50%) scale(0.58);
+    opacity: 0;
+  }
+  13% {
+    transform: translate(-50%, -50%) scale(1.18);
+    opacity: 1;
+  }
+  25% {
+    transform: translate(-50%, -50%) scale(1);
+    opacity: 1;
+  }
+  66% {
+    opacity: 1;
+  }
+  100% {
+    transform: translate(-50%, calc(-50% + var(--fx-drift, -62px))) scale(0.94);
+    opacity: 0;
+  }
+}
+
+/* ═══════════════════════════════════════════════════════════
+   Streak counter
+   ═══════════════════════════════════════════════════════════ */
+
+.fx-streak {
+  position: absolute;
+  display: grid;
+  justify-items: center;
+  gap: 2px;
+  transform: translate(-50%, -50%);
+  will-change: transform, opacity;
+  animation: fxStreak var(--fx-ms, 1250ms) cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.fx-streak__ring {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 132px;
+  height: 132px;
+  margin: -74px 0 0 -66px;
+  border-radius: 50%;
+  background:
+    radial-gradient(circle, rgba(0, 0, 0, 0) 43%, var(--fx-c, #edc96b) 61%, rgba(0, 0, 0, 0) 70%),
+    radial-gradient(circle, var(--fx-c, #edc96b) 0%, rgba(0, 0, 0, 0) 58%);
+  opacity: calc(0.26 + var(--fx-heat, 0) * 0.48);
+  animation: fxStreakRing var(--fx-ms, 1250ms) cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.fx-streak__n {
+  position: relative;
+  font: 800 calc(46px + var(--fx-heat, 0) * 22px) / 1 var(--f-num);
+  letter-spacing: -0.045em;
+  color: transparent;
+  background-image: linear-gradient(180deg, #fff 4%, var(--fx-c, #edc96b) 62%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  filter: drop-shadow(0 2px 0 rgba(0, 0, 0, 0.5)) drop-shadow(0 8px 24px rgba(0, 0, 0, 0.55));
+}
+
+/* A child of a `background-clip: text` element inherits `color: transparent`
+   but NOT the background, so it would paint nothing. The multiplier gets its
+   own solid fill and its own shadow. */
+.fx-streak__x {
+  font-size: 0.5em;
+  vertical-align: 0.34em;
+  margin-right: 0.05em;
+  color: var(--fx-c, #edc96b);
+  -webkit-text-fill-color: var(--fx-c, #edc96b);
+  opacity: 0.66;
+  text-shadow: 0 2px 0 rgba(0, 0, 0, 0.45);
+}
+
+.fx-streak__l {
+  position: relative;
+  color: var(--c-slate-200);
+  opacity: 0.9;
+  text-shadow: 0 1px 4px rgba(0, 0, 0, 0.8);
+}
+
+.fx-streak.is-static {
+  animation: none;
+}
+
+@keyframes fxStreak {
+  0% {
+    transform: translate(-50%, -50%) scale(0.4);
+    opacity: 0;
+  }
+  16% {
+    transform: translate(-50%, -50%) scale(1.14);
+    opacity: 1;
+  }
+  30% {
+    transform: translate(-50%, -50%) scale(1);
+  }
+  74% {
+    transform: translate(-50%, -50%) scale(1);
+    opacity: 1;
+  }
+  100% {
+    transform: translate(-50%, calc(-50% - 26px)) scale(0.94);
+    opacity: 0;
+  }
+}
+
+@keyframes fxStreakRing {
+  0% {
+    transform: scale(0.3);
+  }
+  40% {
+    transform: scale(1.05);
+  }
+  100% {
+    transform: scale(1.5);
+    opacity: 0;
+  }
+}
+
+/* ═══════════════════════════════════════════════════════════
+   Headline ("ROYAL FLUSH")
+   ═══════════════════════════════════════════════════════════ */
+
+.fx-headline {
+  position: absolute;
+  left: 50%;
+  top: 38%;
+  display: grid;
+  justify-items: center;
+  gap: 7px;
+  width: min(94vw, 430px);
+  text-align: center;
+  transform: translate(-50%, -50%);
+}
+
+.fx-headline.is-anchored {
+  top: auto;
+}
+
+.fx-headline__glow {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 148%;
+  aspect-ratio: 2 / 1;
+  transform: translate(-50%, -50%);
+  border-radius: 50%;
+  background: radial-gradient(ellipse at center, rgba(237, 201, 107, 0.3) 0%, rgba(0, 0, 0, 0) 68%);
+  opacity: 0;
+  will-change: opacity, transform;
+}
+
+.fx-headline--bad .fx-headline__glow {
+  background: radial-gradient(ellipse at center, rgba(246, 83, 79, 0.3) 0%, rgba(0, 0, 0, 0) 68%);
+}
+.fx-headline--good .fx-headline__glow {
+  background: radial-gradient(ellipse at center, rgba(52, 211, 153, 0.28) 0%, rgba(0, 0, 0, 0) 68%);
+}
+.fx-headline--epic .fx-headline__glow {
+  background: radial-gradient(ellipse at center, rgba(167, 139, 250, 0.3) 0%, rgba(0, 0, 0, 0) 68%);
+}
+
+.fx-headline__row {
+  position: relative;
+  display: flex;
+  justify-content: center;
+  align-items: baseline;
+  perspective: 640px;
+}
+
+.fx-hl-ch {
+  position: relative;
+  display: inline-block;
+  font: 800 clamp(30px, 10.6vw, 46px) / 1 var(--f-ui);
+  letter-spacing: -0.035em;
+  color: transparent;
+  opacity: 0;
+  transform-origin: 50% 100%;
+  will-change: transform, opacity;
+  /* Two stacked fills:
+     ① a specular sheen sized to the WHOLE ROW and offset per letter, so one
+        continuous highlight rakes across the word;
+     ② the metal ramp itself, identical on every letter — that is what makes
+        struck gold read as struck gold rather than as a rainbow. */
+  background-image:
+    linear-gradient(
+      104deg,
+      rgba(255, 255, 255, 0) 32%,
+      rgba(255, 255, 255, 0.5) 47%,
+      rgba(255, 255, 255, 0) 62%
+    ),
+    linear-gradient(
+      180deg,
+      #fffdf2 0%,
+      #f8e6ae 15%,
+      #e6bd60 35%,
+      #c08d21 48%,
+      #6f4d0a 52%,
+      #e0b451 58%,
+      #f6e0a0 78%,
+      #c9962a 100%
+    );
+  background-size:
+    var(--gw, 100%) 100%,
+    100% 100%;
+  background-position:
+    var(--gx, 0) 0,
+    0 0;
+  -webkit-background-clip: text;
+  background-clip: text;
+}
+
+/* Emboss without a filter: a solid dark copy of the glyph, 2px down,
+   painted behind the gradient fill. */
+.fx-hl-ch::before {
+  content: attr(data-c);
+  position: absolute;
+  left: 0;
+  top: 3px;
+  z-index: -1;
+  color: rgba(24, 13, 1, 0.78);
+  -webkit-text-fill-color: rgba(24, 13, 1, 0.78);
+  text-shadow: 0 3px 10px rgba(0, 0, 0, 0.55);
+}
+
+.fx-headline--bad .fx-hl-ch {
+  background-image:
+    linear-gradient(104deg, rgba(255, 255, 255, 0) 34%, rgba(255, 255, 255, 0.85) 48%, rgba(255, 255, 255, 0) 60%),
+    linear-gradient(180deg, #ffe4e2 0%, #ff8a86 30%, #f6534f 49%, #8a1f1c 55%, #f0736f 74%, #ffd9d7 100%);
+}
+.fx-headline--good .fx-hl-ch {
+  background-image:
+    linear-gradient(104deg, rgba(255, 255, 255, 0) 34%, rgba(255, 255, 255, 0.85) 48%, rgba(255, 255, 255, 0) 60%),
+    linear-gradient(180deg, #eafff7 0%, #7ff0c4 30%, #34d399 49%, #0f5b41 56%, #57e0ae 74%, #dffff2 100%);
+}
+.fx-headline--epic .fx-hl-ch {
+  background-image:
+    linear-gradient(104deg, rgba(255, 255, 255, 0) 34%, rgba(255, 255, 255, 0.85) 48%, rgba(255, 255, 255, 0) 60%),
+    linear-gradient(180deg, #f4f0ff 0%, #c9b8ff 30%, #a78bfa 49%, #4c33a8 56%, #b9a3ff 74%, #efe9ff 100%);
+}
+
+.fx-hl-sp {
+  display: inline-block;
+  width: 0.3em;
+}
+
+.fx-headline__kicker,
+.fx-headline__sub {
+  position: relative;
+  color: var(--c-slate-200);
+  opacity: 0;
+  text-shadow: 0 1px 5px rgba(0, 0, 0, 0.85);
+  will-change: transform, opacity;
+}
+
+.fx-headline__kicker {
+  color: var(--c-gold-300);
+  letter-spacing: 0.16em;
+}
+
+.fx-headline.is-in .fx-hl-ch,
+.fx-headline.is-in .fx-headline__kicker,
+.fx-headline.is-in .fx-headline__sub {
+  animation: fxHlIn 620ms cubic-bezier(0.34, 1.56, 0.64, 1) both;
+  animation-delay: calc(var(--i, 0) * var(--step, 34ms));
+}
+
+.fx-headline.is-in .fx-headline__glow {
+  animation: fxHlGlow 1400ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.fx-headline.is-out {
+  animation: fxHlOut 400ms cubic-bezier(0.65, 0, 0.35, 1) both;
+}
+
+.fx-headline.is-static .fx-hl-ch,
+.fx-headline.is-static .fx-headline__kicker,
+.fx-headline.is-static .fx-headline__sub,
+.fx-headline.is-static .fx-headline__glow {
+  opacity: 1;
+  animation: none;
+  transform: none;
+}
+
+@keyframes fxHlIn {
+  0% {
+    transform: translate3d(0, 34px, 0) rotateX(-78deg) scale(0.88);
+    opacity: 0;
+  }
+  56% {
+    transform: translate3d(0, -5px, 0) rotateX(7deg) scale(1.05);
+    opacity: 1;
+  }
+  100% {
+    transform: translate3d(0, 0, 0) rotateX(0deg) scale(1);
+    opacity: 1;
+  }
+}
+
+@keyframes fxHlGlow {
+  0% {
+    opacity: 0;
+    transform: translate(-50%, -50%) scale(0.5);
+  }
+  24% {
+    opacity: 1;
+    transform: translate(-50%, -50%) scale(1.06);
+  }
+  100% {
+    opacity: 0.55;
+    transform: translate(-50%, -50%) scale(1);
+  }
+}
+
+@keyframes fxHlOut {
+  0% {
+    transform: translate(-50%, -50%) scale(1);
+    opacity: 1;
+  }
+  100% {
+    transform: translate(-50%, calc(-50% - 22px)) scale(1.05);
+    opacity: 0;
+  }
+}
+
+/* ═══════════════════════════════════════════════════════════
+   Celebration banners
+   ═══════════════════════════════════════════════════════════ */
+
+.fx-banner {
+  position: absolute;
+  left: 50%;
+  /* Sits under the persistent top bar so the wallet stays readable while a
+     reward lands — the two things a player wants to see together. */
+  top: calc(var(--safe-t) + var(--topbar-h, 52px) + 8px);
+  width: min(376px, calc(100vw - 20px));
+  min-height: 74px;
+  display: grid;
+  grid-template-columns: 52px minmax(0, 1fr) 16px;
+  align-items: center;
+  gap: 12px;
+  padding: 11px 13px 11px 11px;
+  border-radius: var(--r-lg);
+  overflow: hidden;
+  opacity: 0;
+  pointer-events: auto;
+  will-change: transform, opacity;
+  transform: translate3d(-50%, -150%, 0);
+  background:
+    radial-gradient(120% 160% at 12% 0%, rgb(from var(--fx-c) r g b / 0.24) 0%, rgba(0, 0, 0, 0) 62%),
+    linear-gradient(180deg, rgba(38, 46, 66, 0.96) 0%, rgba(14, 18, 28, 0.97) 100%);
+  box-shadow:
+    var(--e-4),
+    inset 0 1px 0 rgba(255, 255, 255, 0.11),
+    inset 0 0 0 1px rgba(255, 255, 255, 0.06),
+    0 0 0 1px rgba(0, 0, 0, 0.6);
+}
+
+/* `rgb(from …)` is progressive enhancement; this is the floor. */
+@supports not (color: rgb(from white r g b / 0.2)) {
+  .fx-banner {
+    background: linear-gradient(180deg, rgba(38, 46, 66, 0.96) 0%, rgba(14, 18, 28, 0.97) 100%);
+  }
+}
+
+/* A hairline of rarity light along the very top edge. */
+.fx-banner::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 14px;
+  right: 14px;
+  height: 1px;
+  background: linear-gradient(90deg, rgba(255, 255, 255, 0) 0%, var(--fx-c, #edc96b) 50%, rgba(255, 255, 255, 0) 100%);
+  opacity: 0.9;
+}
+
+.fx-banner__glow {
+  position: absolute;
+  left: -18px;
+  top: 50%;
+  width: 132px;
+  height: 132px;
+  margin-top: -66px;
+  border-radius: 50%;
+  background: radial-gradient(circle, var(--fx-c, #edc96b) 0%, rgba(0, 0, 0, 0) 66%);
+  opacity: 0.2;
+  pointer-events: none;
+}
+
+.fx-banner__art {
+  position: relative;
+  width: 52px;
+  height: 52px;
+  display: grid;
+  place-items: center;
+}
+
+.fx-banner__art::after {
+  content: '';
+  position: absolute;
+  inset: -6px;
+  border-radius: 50%;
+  background: radial-gradient(circle, var(--fx-c, #edc96b) 0%, rgba(0, 0, 0, 0) 62%);
+  opacity: 0.22;
+}
+
+.fx-banner__artsvg {
+  position: relative;
+  width: 46px;
+  height: 46px;
+  filter: drop-shadow(0 3px 8px rgba(0, 0, 0, 0.55));
+}
+
+.fx-banner__body {
+  min-width: 0;
+}
+
+.fx-banner__eyebrow {
+  color: var(--fx-c, #edc96b);
+  opacity: 0.96;
+  margin-bottom: 3px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.fx-banner__title {
+  font: var(--t-h3);
+  letter-spacing: -0.015em;
+  color: var(--c-white);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.fx-banner__sub {
+  margin-top: 2px;
+  font: var(--t-body-sm);
+  color: var(--c-slate-300);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.fx-banner__chev {
+  width: 16px;
+  height: 16px;
+  color: var(--c-slate-400);
+  opacity: 0.8;
+}
+
+.fx-banner__rail {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 2px;
+  transform-origin: 0 50%;
+  background: linear-gradient(90deg, var(--fx-c, #edc96b), rgba(255, 255, 255, 0.35));
+  opacity: 0.5;
+}
+
+.fx-banner.is-in {
+  animation: fxBannerIn 620ms cubic-bezier(0.34, 1.56, 0.64, 1) both;
+}
+
+.fx-banner.is-in .fx-banner__rail {
+  animation: fxRail var(--fx-hold, 3400ms) linear both;
+}
+
+.fx-banner.is-in .fx-banner__art {
+  animation: fxBannerArt 780ms cubic-bezier(0.34, 1.56, 0.64, 1) 120ms both;
+}
+
+.fx-banner.is-out {
+  animation: fxBannerOut 360ms cubic-bezier(0.65, 0, 0.35, 1) both;
+}
+
+@keyframes fxBannerIn {
+  0% {
+    transform: translate3d(-50%, -150%, 0) scale(0.96);
+    opacity: 0;
+  }
+  100% {
+    transform: translate3d(-50%, 0, 0) scale(1);
+    opacity: 1;
+  }
+}
+
+@keyframes fxBannerOut {
+  0% {
+    transform: translate3d(-50%, 0, 0) scale(1);
+    opacity: 1;
+  }
+  100% {
+    transform: translate3d(-50%, -130%, 0) scale(0.97);
+    opacity: 0;
+  }
+}
+
+@keyframes fxBannerArt {
+  0% {
+    transform: scale(0.3) rotate(-24deg);
+    opacity: 0;
+  }
+  60% {
+    transform: scale(1.14) rotate(6deg);
+    opacity: 1;
+  }
+  100% {
+    transform: scale(1) rotate(0deg);
+    opacity: 1;
+  }
+}
+
+@keyframes fxRail {
+  from {
+    transform: scaleX(1);
+  }
+  to {
+    transform: scaleX(0);
+  }
+}
+
+/* ═══════════════════════════════════════════════════════════
+   Transition ghosts
+   ═══════════════════════════════════════════════════════════ */
+
+.fx-ghost {
+  position: absolute !important;
+  margin: 0 !important;
+  pointer-events: none;
+  transform-origin: 50% 50%;
+  will-change: transform, opacity;
+  contain: layout paint;
+}
+
+/* ═══════════════════════════════════════════════════════════
+   Reduced motion — the effects still communicate, they just
+   stop moving. Nothing is left invisible.
+   ═══════════════════════════════════════════════════════════ */
+
+@media (prefers-reduced-motion: reduce) {
+  .fx-shine::after,
+  .fx-banner.is-in .fx-banner__art,
+  .fx-headline.is-in .fx-hl-ch,
+  .fx-headline.is-in .fx-headline__glow,
+  .fx-streak,
+  .fx-streak__ring,
+  .fx-float {
+    animation: none !important;
+    opacity: 1;
+    transform: none;
+  }
+
+  .fx-float,
+  .fx-streak {
+    transform: translate(-50%, -50%);
+  }
+
+  .fx-shine::after {
+    opacity: 0;
+  }
+
+  .fx-banner.is-in {
+    animation: none;
+    opacity: 1;
+    transform: translate3d(-50%, 0, 0);
+  }
+
+  .fx-banner.is-out {
+    animation: none;
+    opacity: 0;
+  }
+
+  .fx-hl-ch,
+  .fx-headline__kicker,
+  .fx-headline__sub {
+    opacity: 1;
+  }
+
+  #ui-root[data-fx-shake] {
+    transform: none;
+  }
+}

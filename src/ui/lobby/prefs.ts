@@ -133,7 +133,20 @@ function persist(): void {
   }
 }
 
+/**
+ * Mirrors the switches the stylesheet needs onto <html>, so CSS can honour
+ * the in-app preference exactly like it honours the OS one.
+ */
+function syncDocument(): void {
+  if (typeof document === 'undefined') return;
+  const root = document.documentElement;
+  root.dataset.reduceMotion = state.reduceMotion ? '1' : '0';
+  root.dataset.fourColor = state.fourColor ? '1' : '0';
+  root.dataset.tableSkin = state.tableSkin;
+}
+
 function broadcast(): void {
+  syncDocument();
   const frozen = Object.freeze({ ...state });
   for (const fn of Array.from(subs)) {
     try {
@@ -245,6 +258,8 @@ export function resetSessionClock(): void {
     /* memory only */
   }
 }
+
+syncDocument();
 
 /** True while a self-imposed break is still running. */
 export function onBreak(): boolean {

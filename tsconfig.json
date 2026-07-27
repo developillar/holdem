@@ -15,7 +15,7 @@
     "noUnusedParameters": false,
     "noFallthroughCasesInSwitch": true,
     "forceConsistentCasingInFileNames": true,
-    "types": ["three"]
+    "types": ["three", "node"]
   },
   "include": ["src", "server", "tests", "tools"]
 }

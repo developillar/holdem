@@ -112,10 +112,13 @@ interface DriverConfig {
   heroSeat: number;
   buyIn: number;
   autoRebuy: boolean;
+  /** 'demo' forces the scripted table — used for attract mode and QA */
+  prefer: 'engine' | 'demo';
 }
 
 async function createDriver(cfg: DriverConfig): Promise<{ driver: TableDriver; engine: boolean }> {
   try {
+    if (cfg.prefer === 'demo') throw new Error('scripted table requested');
     const mod = (await import('../../engine/table.ts')) as unknown as {
       LocalTable?: new (o: Record<string, unknown>) => TableDriver;
     };
@@ -133,7 +136,9 @@ async function createDriver(cfg: DriverConfig): Promise<{ driver: TableDriver; e
       }
     }
   } catch (err) {
-    console.warn('[table] local engine unavailable, running the scripted table', err);
+    if (cfg.prefer !== 'demo') {
+      console.warn('[table] local engine unavailable, running the scripted table', err);
+    }
   }
   return {
     driver: new DemoTable({
@@ -160,6 +165,8 @@ export interface TableScreenParams {
   seats?: string;
   /** '1' skips the buy-in sheet and sits with the default stack */
   quick?: string;
+  /** 'demo' runs the built-in scripted table instead of the local engine */
+  driver?: string;
 }
 
 export function mount(container: HTMLElement, params: TableScreenParams = {}): TableScreen {
@@ -546,6 +553,7 @@ export function mount(container: HTMLElement, params: TableScreenParams = {}): T
       heroSeat,
       buyIn: amount,
       autoRebuy: settings.autoRebuy,
+      prefer: params.driver === 'demo' ? 'demo' : 'engine',
     });
     driver = made.driver;
     usingEngine = made.engine;

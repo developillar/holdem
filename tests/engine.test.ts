@@ -10,12 +10,7 @@
  * strength) run over thousands of random deals, which between them catch any
  * table-construction slip.
  */
-// The project's tsconfig pins `types: ["three"]`, so the node built-ins have no
-// declarations here. The ignores keep `npm run typecheck` green without
-// touching shared config; everything below this point is fully typed.
-// @ts-ignore -- needs @types/node in tsconfig "types"
 import { test } from 'node:test';
-// @ts-ignore -- needs @types/node in tsconfig "types"
 import assert from 'node:assert/strict';
 
 import type { Stake, PlayerRef, CardId } from '../src/core/types.ts';

@@ -1,0 +1,21 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>Trainer preview</title>
+    <style>
+      html, body { margin: 0; height: 100%; background: #05060a; }
+      #ui-root { position: fixed; inset: 0; --chrome-t: 14px; --chrome-b: 18px; }
+    </style>
+  </head>
+  <body>
+    <div id="ui-root"></div>
+    <script type="module">
+      import '../styles/index.css';
+      import { mount } from '../screens/trainer.ts';
+      const host = document.getElementById('ui-root');
+      window.__trainer = mount(host);
+    </script>
+  </body>
+</html>

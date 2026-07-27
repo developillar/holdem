@@ -173,7 +173,10 @@ export async function mountShell(root: HTMLElement): Promise<void> {
         console.warn(`[royale] unknown route "${route}"`);
         return;
       }
-      void router.go(route, { params });
+      // Go through the bus, not straight to the router: other subsystems
+      // (notably the 3D stage's show/hide in main.ts) key off 'nav:route',
+      // and driving the router directly strands them on the old route.
+      bus.emit('nav:route', { route: route as RouteName, params });
     },
     back: () => router.back(),
     route: () => router.current()?.name ?? null,
@@ -184,7 +187,11 @@ export async function mountShell(root: HTMLElement): Promise<void> {
     router,
     ready: true,
   };
-  (window as unknown as { __royale?: typeof royale }).__royale = royale;
+  // Merge, never overwrite: the renderer publishes its handle onto __royale
+  // during boot (render/renderer.ts) and the table screen reads it back to
+  // drive the 3D stage. A plain assignment here silently drops it.
+  const w = window as unknown as { __royale?: Record<string, unknown> };
+  w.__royale = Object.assign(w.__royale ?? {}, royale);
 
   // ── first paint ────────────────────────────────────────────────────
   const hash = location.hash.replace(/^#/, '');

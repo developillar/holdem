@@ -5,3 +5,5 @@ shots/
 *.log
 .DS_Store
 .qa-tmp/
+dist-single/
+.verify-single.mjs

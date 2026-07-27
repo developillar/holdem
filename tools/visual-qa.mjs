@@ -142,16 +142,23 @@ async function main() {
       console.warn(`[qa] unknown scene "${id}"`);
       continue;
     }
-    await page.evaluate((route) => {
-      // eslint-disable-next-line
-      (window).__royale?.nav?.(route);
-    }, scene.route);
-    await page.waitForTimeout(scene.settle);
-    if (scene.after) await scene.after(page);
-    const file = path.join(outDir, `${id}.png`);
-    await page.screenshot({ path: file });
-    captured.push(file);
-    console.log(`[qa] captured ${id} → ${path.relative(ROOT, file)}`);
+    // One slow or broken scene must not abort the whole sweep — the 3D table
+    // in particular can blow the default deadline under software GL.
+    try {
+      await page.evaluate((route) => {
+        // eslint-disable-next-line
+        (window).__royale?.nav?.(route);
+      }, scene.route);
+      await page.waitForTimeout(scene.settle);
+      if (scene.after) await scene.after(page);
+      const file = path.join(outDir, `${id}.png`);
+      await page.screenshot({ path: file, timeout: 150_000 });
+      captured.push(file);
+      console.log(`[qa] captured ${id} → ${path.relative(ROOT, file)}`);
+    } catch (err) {
+      errors.push(`scene ${id} failed: ${String(err).split('\n')[0].slice(0, 180)}`);
+      console.warn(`[qa] FAILED ${id}: ${String(err).split('\n')[0].slice(0, 120)}`);
+    }
   }
 
   const fps = await page.evaluate(

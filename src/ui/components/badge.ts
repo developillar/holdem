@@ -18,6 +18,13 @@ export interface BadgeOpts {
   count?: number;
   dot?: boolean;
   tone?: BadgeTone;
+  /**
+   * By default a badge is absolutely positioned so it can ride the corner of
+   * whatever it is placed inside (give that parent `position: relative`).
+   * `inline: true` puts it in normal flow — use it in a list row's trailing
+   * slot or beside a label.
+   */
+  inline?: boolean;
   class?: ClassValue;
   ariaLabel?: string;
 }
@@ -32,7 +39,13 @@ export function Badge(opts: BadgeOpts = {}): BadgeEl {
   const el = h(
     'span',
     {
-      class: cx('r-badge', `r-badge--${opts.tone ?? 'bad'}`, opts.dot && 'r-badge--dot', opts.class),
+      class: cx(
+        'r-badge',
+        `r-badge--${opts.tone ?? 'bad'}`,
+        opts.dot && 'r-badge--dot',
+        opts.inline && 'is-inline',
+        opts.class,
+      ),
       role: 'status',
       'aria-label': opts.ariaLabel ?? null,
       'aria-live': 'polite',

@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <title>Table preview</title>
+    <link rel="stylesheet" href="/src/ui/styles/index.css" />
+    <style>
+      /* Stand-in for the 3D felt so contrast can be judged honestly. */
+      #app::before {
+        content: '';
+        position: absolute;
+        inset: 0;
+        background:
+          radial-gradient(58% 34% at 50% 42%, #1e6a45 0%, #12402a 46%, #0a2417 72%, #06120c 100%),
+          radial-gradient(120% 80% at 50% -10%, #131a2b 0%, #07090f 55%, #05060a 100%);
+      }
+      #app::after {
+        content: '';
+        position: absolute;
+        left: 50%;
+        top: 42%;
+        width: 300px;
+        height: 190px;
+        margin: -95px 0 0 -150px;
+        border-radius: 50% / 50%;
+        box-shadow: 0 0 0 12px rgba(70, 45, 20, 0.9), 0 20px 60px rgba(0, 0, 0, 0.6);
+        background: radial-gradient(60% 60% at 50% 34%, rgba(255, 255, 255, 0.07), transparent 70%);
+      }
+    </style>
+  </head>
+  <body>
+    <div id="app">
+      <div id="ui-root"></div>
+      <div id="fx-root"></div>
+    </div>
+    <script type="module">
+      import { mount } from '/src/ui/screens/table.ts';
+      const view = mount(document.getElementById('ui-root'), {});
+      window.__preview = view;
+    </script>
+  </body>
+</html>

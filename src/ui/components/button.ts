@@ -40,7 +40,12 @@ export interface ButtonOpts {
   haptic?: HapticPattern | null;
   ariaLabel?: string;
   class?: ClassValue;
-  onTap?: (ev: MouseEvent) => void | Promise<unknown>;
+  /**
+   * Return a promise and the button drives its own loading state and blocks
+   * re-entry until it settles. Any other return value is ignored, so
+   * `onTap: () => openSheet(…)` is fine.
+   */
+  onTap?: (ev: MouseEvent) => unknown;
   /** extra nodes appended inside the label column */
   children?: Child;
 }
@@ -136,7 +141,7 @@ export interface IconButtonOpts {
   size?: number;
   class?: ClassValue;
   haptic?: HapticPattern | null;
-  onTap?: (ev: MouseEvent) => void;
+  onTap?: (ev: MouseEvent) => unknown;
 }
 
 export function IconButton(opts: IconButtonOpts): HTMLButtonElement {

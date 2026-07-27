@@ -34,7 +34,7 @@ export interface SurfaceOpts {
   as?: 'div' | 'section' | 'article' | 'button' | 'li';
   class?: ClassValue;
   ariaLabel?: string;
-  onTap?: (ev: MouseEvent) => void;
+  onTap?: (ev: MouseEvent) => unknown;
 }
 
 export function Surface(opts: SurfaceOpts = {}, ...children: Child[]): HTMLElement {
@@ -59,7 +59,8 @@ export function Surface(opts: SurfaceOpts = {}, ...children: Child[]): HTMLEleme
     h('span', { class: 'r-surf__body' }, ...children),
   );
   if (opts.interactive || opts.onTap) pressFeedback(el);
-  if (opts.onTap) el.addEventListener('click', opts.onTap);
+  const tap = opts.onTap;
+  if (tap) el.addEventListener('click', (ev) => tap(ev as MouseEvent));
   return el;
 }
 

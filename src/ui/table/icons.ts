@@ -108,7 +108,13 @@ export function icon(name: IconName, size = 20): SVGElement {
     case 'leave':
       return frame(size, stroke('M14 5.5H6.5a1 1 0 0 0-1 1v11a1 1 0 0 0 1 1H14'), stroke('M17 8.5l3.5 3.5L17 15.5'), stroke('M20 12h-9'));
     case 'chair':
-      return frame(size, stroke('M7 5.5v6.5h10V5.5'), stroke('M5 12h14'), stroke('M7.5 15v3.5'), stroke('M16.5 15v3.5'));
+      return frame(
+        size,
+        stroke('M7.6 10.6V6.6a1.8 1.8 0 0 1 1.8-1.8h5.2a1.8 1.8 0 0 1 1.8 1.8v4'),
+        stroke('M5.4 10.8h13.2a1 1 0 0 1 1 1v1.5a1 1 0 0 1-1 1H5.4a1 1 0 0 1-1-1v-1.5a1 1 0 0 1 1-1z'),
+        stroke('M6.8 14.5v4.2'),
+        stroke('M17.2 14.5v4.2'),
+      );
     case 'skin':
       return frame(
         size,

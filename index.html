@@ -12,6 +12,24 @@
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
     <meta name="color-scheme" content="dark" />
     <title>Royale — Poker</title>
+
+    <!-- Installable: "Add to Home Screen" launches this with no browser chrome. -->
+    <link rel="manifest" href="./manifest.webmanifest" />
+    <link rel="apple-touch-icon" href="./icons/apple-touch-icon.png" />
+    <link rel="icon" type="image/png" sizes="32x32" href="./icons/favicon-32.png" />
+    <meta name="apple-mobile-web-app-title" content="Royale" />
+    <meta name="application-name" content="Royale" />
+
+    <!-- Link previews, so a shared URL doesn't arrive as a bare link. -->
+    <meta property="og:title" content="Royale — Poker" />
+    <meta
+      property="og:description"
+      content="No Limit Hold'em, PLO4, Sit &amp; Go and bomb pots, with a GTO trainer. Add to your home screen to play full screen."
+    />
+    <meta property="og:type" content="website" />
+    <meta property="og:image" content="./icons/icon-512.png" />
+    <meta name="twitter:card" content="summary_large_image" />
+
     <link rel="stylesheet" href="/src/ui/styles/index.css" />
   </head>
   <body>
@@ -41,5 +59,16 @@
       <div class="boot__label">Shuffling up…</div>
     </div>
     <script type="module" src="/src/main.ts"></script>
+    <script>
+      // Registered from the page rather than the bundle so an install failure
+      // can never keep the app itself from booting.
+      if ('serviceWorker' in navigator && location.protocol === 'https:') {
+        addEventListener('load', () => {
+          navigator.serviceWorker.register('./sw.js', { scope: './' }).catch(() => {
+            /* offline play unavailable — the app still runs from the network */
+          });
+        });
+      }
+    </script>
   </body>
 </html>

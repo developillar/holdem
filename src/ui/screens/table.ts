@@ -442,8 +442,24 @@ export function mount(container: HTMLElement, params: TableScreenParams = {}): T
     const css = getComputedStyle(document.documentElement).getPropertyValue('--safe-t').trim();
     const safe = css.endsWith('px') ? parseFloat(css) : 0;
     topLimit = (Number.isFinite(safe) ? safe : 0) + 62;
+    // 62 is a guess at the status bar's height; on a short screen the real bar
+    // is taller than that and the top seat's plate ends up printed through the
+    // stakes line. Measure it instead of assuming.
+    const sbEl = statusBar.el ?? document.querySelector('.sb');
+    if (sbEl) {
+      const sr = sbEl.getBoundingClientRect();
+      if (sr.height > 0) topLimit = Math.max(topLimit, sr.bottom + 8);
+    }
     const zone = heroZone.getBoundingClientRect();
     bottomLimit = zone.height > 0 ? zone.top - 6 : window.innerHeight - 190;
+    // The hand is tilted and fanned, so its ink reaches above the hero zone's
+    // box — and further still while the raise sizer is open. On a short screen
+    // the pot would otherwise sit behind the player's own cards.
+    const hand = document.querySelector('.rhero');
+    if (hand) {
+      const hr = hand.getBoundingClientRect();
+      if (hr.height > 0) bottomLimit = Math.min(bottomLimit, hr.top - 8);
+    }
     const pr = pot.el.getBoundingClientRect();
     potRect.w = pr.width;
     potRect.h = pr.height;

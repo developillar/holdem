@@ -7,3 +7,9 @@ shots/
 .qa-tmp/
 dist-single/
 .verify-single.mjs
+
+# throwaway browser probes used during visual QA
+.probe-*.mjs
+.prof.mjs
+.diag*.mjs
+.shot*.mjs

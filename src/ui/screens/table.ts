@@ -45,6 +45,7 @@ import { createStatusBar } from '../table/statusbar.ts';
 import { createToolbar } from '../table/toolbar.ts';
 import type { SkinId } from '../table/toolbar.ts';
 import { createWinnerBanner } from '../table/winner.ts';
+import { mountCardLayer } from '../table/board.ts';
 
 // ─────────────────────── stage bridge ───────────────────────
 
@@ -65,6 +66,8 @@ interface StageBridge {
   setSkin?(skin: Record<string, unknown>): void;
   setHeroSeat?(seat: number): void;
   setTableSize?(size: number): void;
+  /** Keeps the WebGL stage visible while this screen is mounted. */
+  claimStage?(): () => void;
 }
 
 /**
@@ -216,6 +219,17 @@ export function mount(container: HTMLElement, params: TableScreenParams = {}): T
 
   // ── chrome
   const root = h('div', { class: 'table-screen' });
+
+  // The readable card layer: hero hole cards and the community row. It lives in
+  // the DOM rather than the 3D scene so rank and suit stay razor-sharp at phone
+  // size, and it pins itself to the felt via the renderer's seat anchors.
+  const cards = mountCardLayer();
+  cards.setHeroSeat(heroSeat);
+
+  // Hold the stage open for as long as this screen is mounted. claimStage()
+  // is staleness-safe, which matters because the outgoing screen unmounts
+  // ~260ms after the incoming one mounts during a route transition.
+  const releaseStage = stage()?.claimStage?.() ?? null;
 
   const statusBar = createStatusBar({
     tableName: 'Royale Room',
@@ -803,6 +817,8 @@ export function mount(container: HTMLElement, params: TableScreenParams = {}): T
       /* already gone */
     }
     driver = null;
+    releaseStage?.();
+    cards.dispose();
     plates.dispose();
     pot.dispose();
     winner.dispose();

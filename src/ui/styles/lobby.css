@@ -19,16 +19,6 @@
    fixed.
    ═══════════════════════════════════════════════════════════════════ */
 
-/* base.css:54 promises "the felt must not bleed through" on off-table routes,
-   but `.is-hidden` only animates `opacity`, so every mid-transition frame
-   still composites the table — and on the boot path the class is never applied
-   at all. Take the canvas out of the paint tree outright. */
-#stage.is-hidden {
-  visibility: hidden;
-  opacity: 0;
-  pointer-events: none;
-}
-
 /* tokens.css:151-152 fall back to `0px`, so any renderer that does not resolve
    safe-area insets drops the currency header under the Dynamic Island and the
    tab bar onto the home indicator. Floor them. 44px is the shortest status bar

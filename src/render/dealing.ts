@@ -39,7 +39,7 @@ import {
 import { createChipSystem, type ChipStackHandle, type ChipSystem } from './chips.ts';
 import { createAvatars, rarityForFrame, type AvatarSystem } from './avatars3d.ts';
 import { createParticles, type ParticleSystem } from './particles.ts';
-import { cardFaces, type CardBackId } from './cardFaces.ts';
+import { cardFaces, initCardFaces, type CardBackId } from './cardFaces.ts';
 
 // ═══════════════════════════════════════════════════════════════════
 // ADAPTER — the only coupling to sibling render modules.
@@ -224,6 +224,45 @@ const TAG_HAND = 1;
 const TAG_BOARD = 2;
 const TAG_HERO = 3;
 
+// ─────────────────── the readable card layer ───────────────────
+
+/**
+ * The two card groups a player has to *read* — their own hand and the
+ * community board — are drawn by `src/ui/table/board.ts` as DOM, because at
+ * this camera a felt card projects to about 38 CSS px wide and its rank glyph
+ * to four. That module owns their whole presentation: the deal flight, the
+ * turn, the squeeze, the showdown rim.
+ *
+ * Everything the player never reads stays here, on the felt, where a real
+ * bevelled slab with a contact shadow is worth what it costs: the opponents'
+ * face-down hands, the burn, the muck, and every chip on the table.
+ *
+ * The handshake is a capability check, not a hard dependency. If the layer
+ * has not been mounted — an older host screen, a failed chunk — this module
+ * falls back to dealing all of it in 3D, which is small but never absent.
+ */
+interface ReadableCards {
+  readonly active: boolean;
+  setHeroSeat(seat: number): void;
+  showBoard(cards: readonly CardId[]): void;
+  showHole(seat: number, cards: readonly CardId[]): void;
+}
+
+let readable: ReadableCards | null = null;
+/**
+ * `pending` covers the window between asking for the layer's chunk and getting
+ * it. It counts as present: the first hand of a quick-seated table can start
+ * inside that window, and dealing those two cards on the felt only to have the
+ * readable layer draw them again a frame later is the one outcome worse than
+ * either on its own.
+ */
+let readableState: 'off' | 'pending' | 'on' = 'off';
+
+function readableCards(): boolean {
+  if (readableState === 'pending') return true;
+  return readableState === 'on' && !!readable && readable.active;
+}
+
 class Dealing implements DealingSystem {
   readonly group = new THREE.Group();
   readonly cards: CardPool;
@@ -253,6 +292,8 @@ class Dealing implements DealingSystem {
   private boardCounts = [0, 0];
   private boards = 1;
   private buttonSeat = -1;
+  /** last snapshot seen, so a late-arriving card layer can be caught up */
+  private lastState: TableState | null = null;
 
   // hero peek
   private heroSettled = false;
@@ -360,6 +401,7 @@ class Dealing implements DealingSystem {
   // ─────────────────── state sync ───────────────────
 
   private syncState(state: TableState, you: number): void {
+    this.lastState = state;
     const size = state.seats.length;
     if (size >= 1 && size <= 9 && size !== this.size) {
       this.size = size;
@@ -503,6 +545,49 @@ class Dealing implements DealingSystem {
     this.pile.length = 0;
   }
 
+  /**
+   * Hands the hero's cards and the community row over to the readable layer
+   * mid-hand. Only ever called once, when that layer arrives after the deal
+   * has already begun — the felt gives its copies straight back to the pool.
+   */
+  dropReadableCards(): void {
+    this.sched.clear(TAG_HERO);
+    for (const c of this.hole[this.hero]) c.release();
+    this.hole[this.hero].length = 0;
+    for (const c of this.board) c.release();
+    this.board.length = 0;
+    this.boardOwner.length = 0;
+    this.boardSlotIdx.length = 0;
+    // a glow still pointing at a card we just recycled would light up whatever
+    // the pool hands out next
+    this.glows.length = 0;
+    this.peeked = false;
+    this.heroSettled = false;
+    this.squeeze.set(0);
+    this.lateral.set(0);
+  }
+
+  /**
+   * Catches a freshly-mounted card layer up to the hand already in progress.
+   *
+   * Deal events are one-shot: a layer that arrives after the flop has been
+   * dealt would otherwise sit empty until the next `table:state`, and between
+   * a player's own turn arriving and their acting on it there is no next
+   * `table:state` — the hand simply waits for them, with their cards nowhere.
+   * Replaying the last snapshot through the imperative API costs nothing and
+   * removes that hole entirely.
+   */
+  pushReadable(layer: ReadableCards): void {
+    const state = this.lastState;
+    if (!state) return;
+    layer.setHeroSeat(this.hero);
+    if (state.board && state.board.length > 0) layer.showBoard(state.board);
+    const seat = state.seats?.[this.hero];
+    if (seat && seat.status !== 'folded' && seat.holeCards?.length) {
+      layer.showHole(this.hero, seat.holeCards);
+    }
+  }
+
   // ─────────────────── the deal ───────────────────
 
   private dealerQuat(out: THREE.Quaternion): THREE.Quaternion {
@@ -510,6 +595,10 @@ class Dealing implements DealingSystem {
   }
 
   private dealHole(seat: number, cards: CardId[], faceUp: boolean, order: number): void {
+    // The hero's hand belongs to the readable layer, which runs its own deal
+    // flight from the same event — putting a second, smaller copy of it on the
+    // felt would just be two hands where the player has one.
+    if (seat === this.hero && readableCards()) return;
     const list = this.hole[seat];
     for (const card of cards) {
       const index = list.length;
@@ -647,6 +736,14 @@ class Dealing implements DealingSystem {
     }
     // a live dealer burns before every community street
     this.burnCard(0);
+
+    // The community row is drawn by the readable layer; the burn above is the
+    // part of this street nobody has to read, so it stays a felt object.
+    if (readableCards()) {
+      const b = Math.min(1, Math.max(0, boardIndex));
+      this.boardCounts[b] = Math.min(5, this.boardCounts[b] + cards.length);
+      return;
+    }
 
     const dramatic = street === 'turn' || street === 'river';
     const flight = dramatic ? T.riverFlight : T.boardFlight;
@@ -861,6 +958,8 @@ class Dealing implements DealingSystem {
     let delay = 0;
     for (const r of results) {
       if (r.mucked) continue;
+      // The hero's showdown is the readable layer's — gold rim included.
+      if (r.seat === this.hero && readableCards()) continue;
       const list = this.hole[r.seat];
       if (list.length === 0) continue;
       const seat = r.seat;
@@ -1113,6 +1212,11 @@ export interface DealingOptions {
   parent?: THREE.Object3D | null;
   /** false to skip the drag-to-squeeze binding (e.g. in a replay viewer) */
   input?: boolean;
+  /**
+   * false keeps every card on the felt — no DOM card layer. Used by surfaces
+   * that render a table without a HUD, such as a hand replay thumbnail.
+   */
+  readable?: boolean;
 }
 
 export function createDealing(opts: DealingOptions = {}): DealingSystem {
@@ -1133,26 +1237,86 @@ export function initDealing(opts: DealingOptions = {}): DealingSystem {
   disposeDealing();
   const stage: RendererHandle | null = getStageHandle();
   const tier = opts.tier ?? stage?.tier ?? 'high';
+
+  // ── the readable card layer, requested FIRST ───────────────────────────
+  // Deliberately ahead of `new Dealing()`. That constructor builds thirty card
+  // slabs, the chip system, the seat avatars and the particle pools — hundreds
+  // of milliseconds of synchronous geometry on a mid-tier phone, and seconds
+  // on software GL. Asking for this chunk before any of it starts lets the
+  // fetch and parse ride along with that work instead of queueing behind it,
+  // which is the difference between the player's hand appearing a beat after
+  // they sit down and appearing after the first hand is already over.
+  const wantReadable = opts.readable !== false;
+  const layerChunk = wantReadable ? import('../ui/table/board.ts') : null;
+  if (wantReadable) readableState = 'pending';
+
+  // ── size the printed atlas to the job it actually has ──────────────────
+  // Every face on the felt belongs to an opponent, and an opponent's card
+  // projects to roughly 38 CSS px wide — 114 device px on a 3× phone. A full
+  // retina atlas is a 3016×1296 canvas painted with 52 engraved faces, which
+  // is several hundred milliseconds of blocked main thread per suit row and
+  // more than twice the resolution those cards can ever show. Sizing the cell
+  // to the card gives back that time, and the readable cards are DOM text,
+  // so nothing a player has to read loses a single pixel.
+  const atlasScale = tier === 'high' ? 0.62 : tier === 'mid' ? 0.5 : 0.4;
+  initCardFaces({ scale: wantReadable ? atlasScale : 1, anisotropy: 4 });
+
   const sys = new Dealing(tier);
 
   // The atlas paints one suit per macrotask so mounting the table never
-  // blocks. It is normally finished long before the first hand; this is the
-  // guarantee that it is, without ever costing a frame in the common case.
+  // blocks. Forcing it to finish is a real stall, so it is demanded at the
+  // exact moment a printed face has to exist on the felt: a showdown, or —
+  // when the readable layer is absent and the felt is drawing every card
+  // itself — the start of the hand.
   const atlas = cardFaces();
-  const offAtlas = bus.on('hand:start', () => atlas.ensureBuilt());
+  const offAtlas = bus.on('hand:start', () => {
+    if (!readableCards()) atlas.ensureBuilt();
+  });
+  const offAtlasShow = bus.on('hand:showdown', () => atlas.ensureBuilt());
 
   const parent = opts.parent ?? stage?.root ?? null;
   if (parent) sys.attach(parent);
 
-  const cleanups: Array<() => void> = [offAtlas];
+  const cleanups: Array<() => void> = [offAtlas, offAtlasShow];
   if (stage) {
     cleanups.push(stage.onFrame((_alpha, dt, elapsed) => sys.update(dt, elapsed, stage.camera)));
     if (opts.input !== false) {
       cleanups.push(sys.bindInput(stage.renderer.domElement, stage.camera));
     }
   }
+
+  // ── mount the readable card layer ──────────────────────────────────────
+  // This is a *bootstrap*, not a dependency: `mountCardLayer()` is idempotent
+  // and the host screen is meant to own the call (see the module header in
+  // src/ui/table/board.ts). Until it does, the felt is opened here — because
+  // the stage becoming visible is the one moment in the app that reliably
+  // means "a table is on screen", and a player must never arrive at a table
+  // that cannot show them their own hand. Delete these lines the day
+  // src/ui/screens/table.ts calls mountCardLayer() itself.
+  if (layerChunk) {
+    void layerChunk
+      .then((mod) => {
+        if (singleton !== sys) return;
+        readable = mod.mountCardLayer();
+        readableState = 'on';
+        // A hand that started inside the import window may already have put
+        // the hero's hand or the board on the felt. Take them back, then hand
+        // the layer the hand that is already in progress.
+        sys.dropReadableCards();
+        sys.pushReadable(readable);
+        cleanups.push(() => mod.disposeCardLayer());
+      })
+      .catch((err) => {
+        // Not fatal: `dealHole`/`dealBoard` fall back to felt cards.
+        readableState = 'off';
+        console.warn('[dealing] readable card layer unavailable', err);
+      });
+  }
+
   detach = () => {
     for (const c of cleanups) c();
+    readable = null;
+    readableState = 'off';
   };
   singleton = sys;
   return sys;

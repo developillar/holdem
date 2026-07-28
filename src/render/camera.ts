@@ -13,7 +13,7 @@
  */
 import * as THREE from 'three';
 import { bus } from '../core/bus.ts';
-import { layout } from './table.ts';
+import { DEFAULT_TABLE_SIZE, layout } from './table.ts';
 
 const DEG = Math.PI / 180;
 
@@ -90,19 +90,34 @@ export interface CameraRig {
   dispose(): void;
 }
 
-const BASE_ELEVATION = 55 * DEG;
-const BASE_FOV = 50;
-const FIT_W = 1.94;
-const FIT_H = 1.62;
-const FIT_CENTER_Y = 0.06;
+/**
+ * Portrait framing, tuned at 393 × 852 and checked at 360 × 640 / 430 × 932.
+ *
+ * `BASE_ELEVATION` is the single most important number on this screen. Above
+ * roughly 52° the oval flattens into a plan view — a diagram of a table, not
+ * a table. Below roughly 38° the community row starts to collide with the far
+ * rail and the pot disappears behind the board. 46° is where the near rail
+ * still reads as *in front of you* while five cards stay legible.
+ *
+ * `FIT_W` leaves 8 % of the width as margin so a nameplate pinned to a side
+ * seat has somewhere to live; `FIT_H` only binds on short devices (640 px),
+ * where fitting the width alone would push the near rail into the action bar.
+ * `FIT_CENTER_Y` sits the silhouette above centre, which is what reserves the
+ * lower quarter of the frame for the hero's cards and the bet controls.
+ */
+const BASE_ELEVATION = 46 * DEG;
+const BASE_FOV = 47;
+const FIT_W = 1.84;
+const FIT_H = 1.26;
+const FIT_CENTER_Y = 0.07;
 
 export function createCameraRig(): CameraRig {
   const camera = new THREE.PerspectiveCamera(BASE_FOV, 1, 0.12, 42);
   camera.name = 'stage-camera';
 
-  const pivot = new THREE.Vector3(0, 0.02, -0.04);
+  const pivot = new THREE.Vector3(0, 0.02, -0.06);
   const basePivot = pivot.clone();
-  let baseDistance = 4.8;
+  let baseDistance = 5.2;
 
   const sAzimuth = new Spring(0, 5.0, 0.86);
   const sElevation = new Spring(BASE_ELEVATION, 5.0, 0.9);
@@ -113,7 +128,7 @@ export function createCameraRig(): CameraRig {
   const sFov = new Spring(BASE_FOV, 4.6, 0.95);
   const sRoll = new Spring(0, 6.2, 0.8);
 
-  let tableSize = 9;
+  let tableSize = DEFAULT_TABLE_SIZE;
   let heroSeat = 0;
   let focusSlot: number | null = null;
   let focusIntensity = 0;
@@ -131,17 +146,26 @@ export function createCameraRig(): CameraRig {
   let tiltBase: { beta: number; gamma: number } | null = null;
   let tiltBound = false;
 
+  /**
+   * The silhouette we frame against: the rail's outer rim sampled all the way
+   * round, at both the crest height and the skirt shoulder. Under perspective
+   * the widest point on screen is *not* the widest point in world space — it
+   * drifts toward the camera — so a handful of cardinal points is not enough,
+   * and a bounding sphere would frame the invisible pedestal instead.
+   */
   const framePoints: THREE.Vector3[] = [];
   {
     const { RAIL_OUT_X: rx, RAIL_OUT_Z: rz, RAIL_H: rh } = layout;
-    framePoints.push(new THREE.Vector3(0, 0, rz));
-    framePoints.push(new THREE.Vector3(0, rh, -rz));
-    framePoints.push(new THREE.Vector3(rx, rh, 0));
-    framePoints.push(new THREE.Vector3(-rx, rh, 0));
-    framePoints.push(new THREE.Vector3(rx * 0.72, rh, rz * 0.72));
-    framePoints.push(new THREE.Vector3(-rx * 0.72, rh, rz * 0.72));
-    framePoints.push(new THREE.Vector3(rx * 0.72, rh, -rz * 0.72));
-    framePoints.push(new THREE.Vector3(-rx * 0.72, rh, -rz * 0.72));
+    const RIM_SAMPLES = 28;
+    for (let i = 0; i < RIM_SAMPLES; i++) {
+      const a = (i / RIM_SAMPLES) * Math.PI * 2;
+      const x = rx * Math.cos(a);
+      const z = rz * Math.sin(a);
+      framePoints.push(new THREE.Vector3(x, rh, z));
+      // the skirt shoulder is what actually defines the lower silhouette on
+      // the camera side, and the far side's is hidden behind the crest
+      if (z > 0) framePoints.push(new THREE.Vector3(x, -0.03, z));
+    }
   }
 
   const tmpV = new THREE.Vector3();

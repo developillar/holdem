@@ -1,0 +1,486 @@
+/**
+ * ROYALE — the readable cards.
+ *
+ * The hero's hand and the community board. These are the two objects the
+ * player's eye returns to on every single beat of every single hand, so they
+ * get the largest type, the deepest material and the only gold rim on the
+ * felt. Everything else on the table screen is chrome around them.
+ *
+ * Local palette note: `tokens.css` carries the app's obsidian/gold/felt
+ * system, but it has no *paper stock* ramp — nothing else in the app is
+ * printed on card. The `--rc-paper-*` block below is that ramp, declared once
+ * here and derived from nothing, exactly as the feed's mini cards do it. Suit
+ * colour, gold, radii, shadows, easings and durations all come from tokens.
+ */
+
+.rcards {
+  --rc-paper-hi: #fdfaf3;
+  --rc-paper-mid: #f4eee1;
+  --rc-paper-lo: #e6dccb;
+  --rc-ink: rgba(24, 20, 12, 0.22);
+  --rc-back-hi: #1d2536;
+  --rc-back-mid: #101522;
+  --rc-back-lo: #080b13;
+
+  position: absolute;
+  inset: 0;
+  z-index: 3;
+  pointer-events: none;
+  /* deliberately no `contain` — layout containment would make this element the
+     containing block for its own fixed-position children */
+  transition: opacity var(--d-base) var(--ease-out);
+}
+
+.rcards.is-off {
+  opacity: 0;
+  pointer-events: none;
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   THE CARD
+   Width is the only input: everything else is a ratio of it, so the
+   same element is a 50px board card and a 96px hero card with no
+   second set of numbers to keep in sync.
+   ═══════════════════════════════════════════════════════════════ */
+
+.rc {
+  position: absolute;
+  inset: 0;
+  display: block;
+  perspective: 900px;
+  color: var(--c-suit-s);
+}
+
+.rc[data-suit='0'] { color: var(--c-suit-c); }
+.rc[data-suit='1'] { color: var(--c-suit-d); }
+.rc[data-suit='2'] { color: var(--c-suit-h); }
+.rc[data-suit='3'] { color: var(--c-suit-s); }
+
+.rc__flip {
+  position: absolute;
+  inset: 0;
+  transform-style: preserve-3d;
+  transform: rotateY(180deg);
+}
+
+.rc.is-up .rc__flip {
+  transform: rotateY(0deg);
+}
+
+.rc__face,
+.rc__back {
+  position: absolute;
+  inset: 0;
+  border-radius: var(--rc-r);
+  overflow: hidden;
+  backface-visibility: hidden;
+  -webkit-backface-visibility: hidden;
+}
+
+/* ── the printed face ───────────────────────────────────────── */
+
+.rc__face {
+  background: linear-gradient(168deg, var(--rc-paper-hi) 0%, var(--rc-paper-mid) 48%, var(--rc-paper-lo) 100%);
+  box-shadow:
+    inset 0 0 0 0.5px var(--rc-ink),
+    inset 0 1px 0 rgba(255, 255, 255, 0.96),
+    inset 0 calc(var(--rc-w) * -0.03) calc(var(--rc-w) * 0.05) rgba(120, 106, 78, 0.16);
+}
+
+/* Court cards and aces get an engraved keyline — a rank tier you read
+   before you have read the glyph. */
+.rc.is-court .rc__face::before {
+  content: '';
+  position: absolute;
+  inset: calc(var(--rc-w) * 0.062);
+  border-radius: calc(var(--rc-r) * 0.62);
+  box-shadow:
+    inset 0 0 0 1px rgba(192, 141, 33, 0.34),
+    inset 0 0 0 2.5px rgba(255, 255, 255, 0.5);
+}
+
+.rc__corner {
+  position: absolute;
+  top: calc(var(--rc-w) * 0.055);
+  left: calc(var(--rc-w) * 0.075);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  line-height: 1;
+}
+
+/**
+ * The rank. 0.5× the card's width — roughly twice the optical size of the
+ * index on a real playing card, which is the whole point: a physical deck is
+ * read at arm's length in good light, and a phone is neither.
+ */
+.rc__rank {
+  font: 800 calc(var(--rc-w) * 0.5) / 0.86 var(--f-num);
+  letter-spacing: -0.055em;
+  color: currentColor;
+}
+
+.rc__rank.is-wide {
+  font-size: calc(var(--rc-w) * 0.4);
+  letter-spacing: -0.09em;
+}
+
+.rc__pip {
+  display: block;
+  width: calc(var(--rc-w) * 0.28);
+  height: calc(var(--rc-w) * 0.28);
+  margin-top: calc(var(--rc-w) * 0.035);
+  fill: currentColor;
+}
+
+/* A watermark, not a second pip: suit mass you can read across the felt
+   without it competing with the index. */
+.rc__mark {
+  position: absolute;
+  right: calc(var(--rc-w) * -0.06);
+  bottom: calc(var(--rc-w) * -0.05);
+  width: calc(var(--rc-w) * 0.7);
+  height: calc(var(--rc-w) * 0.7);
+  fill: currentColor;
+  opacity: 0.13;
+}
+
+.rc__gloss {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(151deg, rgba(255, 255, 255, 0.72) 0%, rgba(255, 255, 255, 0) 36%);
+  pointer-events: none;
+}
+
+/* ── the back ───────────────────────────────────────────────── */
+
+.rc__back {
+  transform: rotateY(180deg);
+  background: linear-gradient(164deg, var(--rc-back-hi) 0%, var(--rc-back-mid) 52%, var(--rc-back-lo) 100%);
+  box-shadow:
+    inset 0 0 0 0.5px var(--line-gold),
+    inset 0 1px 0 rgba(255, 255, 255, 0.09);
+}
+
+.rc__weave {
+  position: absolute;
+  inset: calc(var(--rc-w) * 0.075);
+  border-radius: calc(var(--rc-r) * 0.7);
+  background:
+    repeating-linear-gradient(45deg, rgba(237, 201, 107, 0.26) 0 0.8px, transparent 0.8px 4.5px),
+    repeating-linear-gradient(-45deg, rgba(237, 201, 107, 0.14) 0 0.8px, transparent 0.8px 4.5px);
+  box-shadow: inset 0 0 0 0.5px rgba(237, 201, 107, 0.24);
+}
+
+.rc__medal {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  font: 800 calc(var(--rc-w) * 0.34) / 1 var(--f-num);
+  letter-spacing: 0.02em;
+  background: var(--grad-gold);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  opacity: 0.9;
+}
+
+/* ── states ─────────────────────────────────────────────────── */
+
+.rc.is-dim {
+  opacity: 0.42;
+}
+
+.rc.is-win .rc__face {
+  box-shadow:
+    inset 0 0 0 1.6px var(--c-gold-400),
+    inset 0 1px 0 rgba(255, 255, 255, 0.95),
+    inset 0 calc(var(--rc-w) * -0.03) calc(var(--rc-w) * 0.05) rgba(120, 106, 78, 0.16);
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   THE COMMUNITY BOARD
+   ═══════════════════════════════════════════════════════════════ */
+
+.rboard {
+  --rb-w: clamp(44px, 13.4vw, 58px);
+  --rb-gap: calc(var(--rb-w) * 0.11);
+
+  position: fixed;
+  left: 0;
+  top: 0;
+  display: flex;
+  align-items: flex-end;
+  gap: var(--rb-gap);
+  padding: calc(var(--rb-w) * 0.1);
+  will-change: transform;
+  pointer-events: none;
+}
+
+.rboard__slot {
+  --rc-w: var(--rb-w);
+  --rc-r: calc(var(--rc-w) * 0.115);
+  position: relative;
+  flex: 0 0 auto;
+  width: var(--rc-w);
+  height: calc(var(--rc-w) * 1.4);
+}
+
+/* Empty slot: a recessed well, not a dashed ghost card. It reads as a place
+   a card is going to arrive, which is what makes the street legible. */
+.rboard__well {
+  position: absolute;
+  inset: 0;
+  border-radius: var(--rc-r);
+  background: linear-gradient(180deg, rgba(2, 10, 7, 0.62), rgba(2, 10, 7, 0.3));
+  box-shadow:
+    inset 0 2px 4px rgba(0, 0, 0, 0.65),
+    inset 0 0 0 1px rgba(255, 255, 255, 0.07),
+    0 1px 0 rgba(255, 255, 255, 0.08);
+  transition: opacity var(--d-fast) var(--ease-out);
+}
+
+.rboard__well::after {
+  content: '';
+  position: absolute;
+  inset: calc(var(--rc-w) * 0.11);
+  border-radius: calc(var(--rc-r) * 0.62);
+  border: 1px dashed rgba(237, 201, 107, 0.16);
+}
+
+.rboard__slot.is-on .rboard__well {
+  opacity: 0;
+}
+
+.rboard__fly {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  border-radius: var(--rc-r);
+  will-change: transform, opacity;
+  /* the card's own shadow onto the felt — it has to look landed, not pasted */
+  box-shadow:
+    0 1px 2px rgba(3, 5, 10, 0.55),
+    0 calc(var(--rc-w) * 0.09) calc(var(--rc-w) * 0.24) rgba(3, 5, 10, 0.46);
+}
+
+.rboard__slot.is-on .rboard__fly {
+  opacity: 1;
+}
+
+/* The landing bloom: a gold rim that flares and decays. Turn and river get a
+   longer, brighter one — that is the whole difference between "a card" and
+   "the card that just changed the hand". */
+.rboard__slot.is-bloom .rboard__fly {
+  animation: rbBloom var(--d-lux) var(--ease-out) 1;
+}
+
+.rboard__slot.is-drama.is-bloom .rboard__fly {
+  animation: rbBloomBig 900ms var(--ease-out) 1;
+}
+
+.rboard__slot.is-pop .rboard__fly {
+  animation: rbPop var(--d-base) var(--ease-spring) 1;
+}
+
+@keyframes rbBloom {
+  0% {
+    box-shadow:
+      0 0 0 1.5px rgba(237, 201, 107, 0.85),
+      0 0 18px rgba(217, 169, 58, 0.6),
+      0 4px 14px rgba(3, 5, 10, 0.46);
+  }
+  100% {
+    box-shadow:
+      0 1px 2px rgba(3, 5, 10, 0.55),
+      0 5px 14px rgba(3, 5, 10, 0.46);
+  }
+}
+
+@keyframes rbBloomBig {
+  0% {
+    box-shadow:
+      0 0 0 2.5px var(--c-gold-300),
+      0 0 34px rgba(217, 169, 58, 0.85),
+      0 4px 14px rgba(3, 5, 10, 0.46);
+  }
+  38% {
+    box-shadow:
+      0 0 0 1.5px rgba(237, 201, 107, 0.7),
+      0 0 22px rgba(217, 169, 58, 0.5),
+      0 4px 14px rgba(3, 5, 10, 0.46);
+  }
+  100% {
+    box-shadow:
+      0 1px 2px rgba(3, 5, 10, 0.55),
+      0 5px 14px rgba(3, 5, 10, 0.46);
+  }
+}
+
+@keyframes rbPop {
+  0% {
+    transform: scale(0.86);
+    opacity: 0;
+  }
+  100% {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+
+/* Showdown: the five that make the hand lift out of the row. */
+.rboard.is-showdown .rc.is-win {
+  animation: rbWin var(--d-slow) var(--ease-spring) 1 both;
+}
+
+@keyframes rbWin {
+  0% { transform: translateY(0) scale(1); }
+  55% { transform: translateY(calc(var(--rc-w) * -0.12)) scale(1.07); }
+  100% { transform: translateY(calc(var(--rc-w) * -0.06)) scale(1.03); }
+}
+
+.rboard.is-showdown .rboard__slot.is-on:has(.rc.is-win) .rboard__fly {
+  box-shadow:
+    0 0 0 1px rgba(237, 201, 107, 0.4),
+    0 2px 12px rgba(217, 169, 58, 0.4),
+    0 1px 2px rgba(3, 5, 10, 0.5);
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   THE HERO'S HAND
+   ═══════════════════════════════════════════════════════════════ */
+
+/**
+ * Hand width. The ceiling is set by the gap between the hero's own nameplate
+ * and the top of the action bar — about 110 px on a 393×852 phone. Anything
+ * larger and the hand climbs over its own stack readout, which trades one
+ * unreadable thing for another.
+ */
+.rhero {
+  --rh-w: clamp(68px, 20.4vw, 92px);
+  --sq: 0;
+  --n: 2;
+  --fan-x: 0.6;
+  --fan-rot: 8.5;
+
+  position: fixed;
+  left: 50%;
+  bottom: 0;
+  width: calc(var(--rh-w) * 2.6);
+  /* Exactly one card tall. The squeeze lifts the hand with a transform, which
+     needs no box to live in — and every pixel of padding here would be a
+     pixel of the hero's own nameplate the cards climb over. */
+  height: calc(var(--rh-w) * 1.4);
+  will-change: transform;
+  pointer-events: auto;
+  touch-action: none;
+  opacity: 0;
+  transition: opacity var(--d-base) var(--ease-out);
+}
+
+.rhero.is-live {
+  opacity: 1;
+}
+
+/* The group tilt: the hand is angled toward the player, and the squeeze tips
+   it further as you pull. Kept on its own element so the JS that positions
+   the hand never has to know about it. */
+.rhero__deck {
+  position: absolute;
+  inset: 0;
+  transform: perspective(760px) rotateX(calc((9 - var(--sq) * 7) * 1deg));
+  transform-origin: 50% 100%;
+  transition: transform var(--d-fast) linear;
+}
+
+.rhero__slot {
+  --rc-w: var(--rh-w);
+  --rc-r: calc(var(--rc-w) * 0.105);
+  position: absolute;
+  left: 50%;
+  bottom: 0;
+  width: var(--rc-w);
+  height: calc(var(--rc-w) * 1.4);
+  margin-left: calc(var(--rc-w) * -0.5);
+  opacity: 0;
+  transform-origin: 50% 132%;
+  transform:
+    translate3d(
+      calc(var(--t) * var(--rc-w) * (var(--fan-x) + var(--sq) * 0.1)),
+      calc(var(--at) * var(--rc-w) * 0.05 - var(--sq) * var(--rc-w) * 0.3),
+      0
+    )
+    rotate(calc(var(--t) * (var(--fan-rot) + var(--sq) * 5) * 1deg))
+    scale(calc(1 + var(--sq) * 0.07));
+}
+
+.rhero__slot.is-on {
+  opacity: 1;
+}
+
+.rhero__fly {
+  position: absolute;
+  inset: 0;
+  border-radius: var(--rc-r);
+  will-change: transform, opacity;
+  /* Two shadows: a tight contact under the card and a long soft one on the
+     felt. One shadow reads as a sticker; two reads as an object above a
+     surface, which is exactly what a held card is. */
+  box-shadow:
+    0 1px 2px rgba(3, 5, 10, 0.6),
+    0 calc(var(--rc-w) * 0.12) calc(var(--rc-w) * 0.3) rgba(3, 5, 10, 0.55);
+  transition: box-shadow var(--d-fast) var(--ease-out);
+}
+
+.rhero.is-held .rhero__fly {
+  box-shadow:
+    0 2px 4px rgba(3, 5, 10, 0.55),
+    0 calc(var(--rc-w) * 0.24) calc(var(--rc-w) * 0.5) rgba(3, 5, 10, 0.6);
+}
+
+/* Folding: the hand skates down out of frame. */
+.rhero.is-mucked {
+  opacity: 0;
+  transform: translate3d(-50%, calc(var(--rh-w) * 0.55), 0);
+  transition:
+    opacity var(--d-base) var(--ease-out),
+    transform var(--d-slow) var(--ease-in-out);
+  pointer-events: none;
+}
+
+.rhero.is-showdown .rc.is-win .rc__face {
+  box-shadow:
+    inset 0 0 0 2px var(--c-gold-400),
+    inset 0 1px 0 rgba(255, 255, 255, 0.95);
+}
+
+.rhero.is-showdown .rhero__slot:has(.rc.is-win) .rhero__fly {
+  box-shadow:
+    0 0 0 1px rgba(237, 201, 107, 0.45),
+    0 0 22px rgba(217, 169, 58, 0.4),
+    0 calc(var(--rc-w) * 0.12) calc(var(--rc-w) * 0.3) rgba(3, 5, 10, 0.55);
+}
+
+/* ── narrow phones: the fan tucks in so nothing leaves the frame ── */
+
+@media (max-width: 374px) {
+  .rboard {
+    --rb-gap: calc(var(--rb-w) * 0.08);
+  }
+  .rhero {
+    --rh-w: 70px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .rboard__slot.is-bloom .rboard__fly,
+  .rboard__slot.is-drama.is-bloom .rboard__fly,
+  .rboard__slot.is-pop .rboard__fly,
+  .rboard.is-showdown .rc.is-win {
+    animation: none;
+  }
+  .rhero__deck {
+    transition: none;
+  }
+}

@@ -643,14 +643,25 @@ const PIP_LAYOUT: Record<number, PipSpot[]> = {
 
 // ─────────────────────────── face painters ───────────────────────────
 
+/**
+ * The corner index.
+ *
+ * A real playing card gives its index about 11% of the card's height, because
+ * a real card is read at arm's length in a lit room. A phone is neither: on a
+ * 393 pt screen a felt card is a few dozen pixels tall, and 11% of that is a
+ * glyph nobody can resolve. Ours takes 17.5% — half again as large as a Bee —
+ * and the suit pip under it grows with it. The whole index column is still
+ * inside the same margin, so the pip layouts and the court panel below are
+ * untouched; it is only the ink that got confident.
+ */
 function paintIndex(g: Ctx, w: number, h: number, rank: number, suit: Suit, pal: SuitPalette): void {
   const label = RANK_CHARS[rank - 2];
   const isTen = label === '10';
-  const glyphH = h * 0.128;
-  const pipH = h * 0.085;
-  const colX = w * 0.117;
-  const glyphY = h * 0.098;
-  const pipY = glyphY + glyphH * 0.62 + pipH * 0.62;
+  const glyphH = h * 0.16;
+  const pipH = h * 0.098;
+  const colX = w * 0.122;
+  const glyphY = h * 0.112;
+  const pipY = glyphY + glyphH * 0.6 + pipH * 0.66;
 
   for (const flip of [false, true]) {
     g.save();
@@ -658,13 +669,19 @@ function paintIndex(g: Ctx, w: number, h: number, rank: number, suit: Suit, pal:
       g.translate(w, h);
       g.rotate(Math.PI);
     }
+    // A soft halo of paper behind the index keeps it legible where it crosses
+    // a court panel or an ace's guilloche, without reading as an outline.
+    g.save();
+    g.shadowColor = 'rgba(249,247,241,0.95)';
+    g.shadowBlur = w * 0.035;
     g.fillStyle = pal.main;
     inkText(g, label, colX, glyphY, glyphH, {
-      maxW: w * 0.2,
-      condense: isTen ? 0.82 : 1,
+      maxW: w * 0.205,
+      condense: isTen ? 0.78 : 1,
       weight: 700,
     });
     drawPip(g, suit, colX, pipY, pipH, false, pal);
+    g.restore();
     g.restore();
   }
 }
@@ -755,33 +772,33 @@ function paintAce(g: Ctx, w: number, h: number, suit: Suit, pal: SuitPalette): v
 
 function paintCourtHalf(g: Ctx, w: number, h: number, rankChar: string, suit: Suit, pal: SuitPalette): void {
   const cx = w * 0.5;
-  if (rankChar === 'K') drawCrown(g, cx, h * 0.208, w * 0.33, pal);
-  else if (rankChar === 'Q') drawTiara(g, cx, h * 0.208, w * 0.33, pal);
-  else drawFleur(g, cx, h * 0.205, w * 0.29, pal);
+  if (rankChar === 'K') drawCrown(g, cx, h * 0.206, w * 0.36, pal);
+  else if (rankChar === 'Q') drawTiara(g, cx, h * 0.206, w * 0.36, pal);
+  else drawFleur(g, cx, h * 0.204, w * 0.32, pal);
 
-  // Monogram. Big, outlined and filled with a vertical metal ramp of the suit
-  // colour — the court face has to carry weight from across a table, and a
-  // thin letter on a tinted panel disappears the moment the card is small.
-  const monoH = h * 0.178;
-  const monoY = h * 0.362;
+  // Monogram.
+  //
+  // Solid suit colour, deliberately — not a metal ramp. `inkText` scales the
+  // glyph to normalise its ink box, and a gradient authored in card space gets
+  // scaled with it, so the letter ends up sampling only the pale top third of
+  // the ramp and reads as a pink ghost on a pink panel. At 40 px tall the
+  // court card's job is to say K, and one confident colour says it.
+  const monoH = h * 0.196;
+  const monoY = h * 0.366;
   g.save();
-  const grad = g.createLinearGradient(0, monoY - monoH * 0.58, 0, monoY + monoH * 0.58);
-  grad.addColorStop(0, pal.light);
-  grad.addColorStop(0.3, pal.main);
-  grad.addColorStop(0.72, pal.main);
-  grad.addColorStop(1, pal.deep);
-  g.lineJoin = 'round';
-  g.lineWidth = Math.max(2, w * 0.014);
-  g.strokeStyle = 'rgba(255,255,255,0.9)';
-  g.fillStyle = grad;
-  // white keyline first, then the fill on top: the letter reads on any tint
-  g.save();
-  g.translate(0, h * 0.004);
-  g.globalAlpha = 0.18;
+  // a dark contact shadow, then a paper halo, then the letter
+  g.globalAlpha = 0.2;
   g.fillStyle = '#000';
+  g.translate(0, h * 0.005);
   inkText(g, rankChar, cx, monoY, monoH, { maxW: w * 0.46, weight: 700 });
   g.restore();
-  g.fillStyle = grad;
+
+  g.save();
+  g.shadowColor = 'rgba(252,250,244,0.95)';
+  g.shadowBlur = w * 0.05;
+  g.fillStyle = pal.main;
+  inkText(g, rankChar, cx, monoY, monoH, { maxW: w * 0.46, weight: 700 });
+  // a second pass paints the halo up to full opacity without darkening the ink
   inkText(g, rankChar, cx, monoY, monoH, { maxW: w * 0.46, weight: 700 });
   g.restore();
 

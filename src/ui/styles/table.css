@@ -183,6 +183,28 @@
 
 /* ───────────────────────────── nameplates ───────────────────────────── */
 
+/**
+ * Frame metals. Rarity is expressed as an alloy, never as a hue — gunmetal,
+ * steel, brass, copper, gold, rose gold — so six seats read as one set of
+ * medals rather than six unrelated colours. Gold and the greys come straight
+ * from the token ramp; copper and rose gold are the two values the palette is
+ * missing and belong in tokens.css the moment that file is open for edits.
+ */
+.table-screen,
+.pp-sheet {
+  --metal-copper-hi: #e2a276;
+  --metal-copper-lo: #7a4523;
+  --metal-rose-hi: #f0cabb;
+  --metal-rose-lo: #9c5f4c;
+}
+
+[data-metal='gunmetal'] { --fr-a: var(--c-slate-400); --fr-b: var(--c-slate-800); }
+[data-metal='steel'] { --fr-a: var(--c-slate-200); --fr-b: var(--c-slate-500); }
+[data-metal='brass'] { --fr-a: var(--c-gold-300); --fr-b: var(--c-gold-700); }
+[data-metal='copper'] { --fr-a: var(--metal-copper-hi); --fr-b: var(--metal-copper-lo); }
+[data-metal='gold'] { --fr-a: var(--c-gold-200); --fr-b: var(--c-gold-600); }
+[data-metal='rose'] { --fr-a: var(--metal-rose-hi); --fr-b: var(--metal-rose-lo); }
+
 .plates {
   position: absolute;
   inset: 0;
@@ -199,6 +221,7 @@
   align-items: center;
   pointer-events: auto;
   will-change: transform;
+  -webkit-tap-highlight-color: transparent;
   transition: opacity var(--d-base) var(--ease-out);
 }
 
@@ -214,109 +237,200 @@
   position: relative;
   display: flex;
   align-items: center;
-  gap: 7px;
-  min-width: 104px;
-  max-width: 148px;
-  padding: 4px 11px 4px 4px;
+  gap: 6px;
+  min-width: 92px;
+  max-width: 152px;
+  min-height: var(--hit);
+  padding: 5px 10px 5px 5px;
   border-radius: var(--r-pill);
-  background: linear-gradient(180deg, rgba(26, 32, 47, 0.86), rgba(8, 11, 18, 0.92));
+  background: linear-gradient(180deg, rgba(26, 32, 47, 0.88), rgba(8, 11, 18, 0.94));
   border: 1px solid var(--line-2);
   box-shadow: var(--e-2), var(--inset-hi), var(--inset-lo);
   -webkit-backdrop-filter: saturate(150%) blur(12px);
   backdrop-filter: saturate(150%) blur(12px);
-  transition: border-color var(--d-base) var(--ease-out), box-shadow var(--d-base) var(--ease-out);
+  transition:
+    border-color var(--d-base) var(--ease-out),
+    box-shadow var(--d-base) var(--ease-out),
+    background var(--d-base) var(--ease-out);
+}
+
+.np.is-pressed .np__card {
+  background: linear-gradient(180deg, rgba(38, 46, 66, 0.94), rgba(12, 16, 25, 0.96));
 }
 
 /* A soft dark halo so plates stay legible over the brightest felt. */
 .np__scrim {
   position: absolute;
-  inset: -14px -18px;
+  inset: -15px -20px;
   z-index: -1;
   border-radius: 999px;
-  background: radial-gradient(58% 120% at 50% 50%, rgba(2, 4, 8, 0.62) 0%, rgba(2, 4, 8, 0.28) 52%, rgba(2, 4, 8, 0) 78%);
+  background: radial-gradient(
+    58% 122% at 50% 50%,
+    rgba(2, 4, 8, 0.72) 0%,
+    rgba(2, 4, 8, 0.34) 52%,
+    rgba(2, 4, 8, 0) 78%
+  );
   pointer-events: none;
 }
 
 .np__avwrap {
   position: relative;
-  width: 42px;
-  height: 42px;
+  width: 34px;
+  height: 34px;
   flex: none;
 }
 
 .np__av {
   position: absolute;
-  inset: 3px;
+  inset: 2px;
   border-radius: 50%;
   display: grid;
   place-items: center;
   overflow: hidden;
-  background: linear-gradient(150deg, var(--av-a, #3d4761), var(--av-b, #1b2130));
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.22), inset 0 -6px 10px rgba(0, 0, 0, 0.4);
+  background: linear-gradient(150deg, var(--c-slate-600), var(--c-slate-900));
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.2), inset 0 -6px 10px rgba(0, 0, 0, 0.4);
 }
 
+.np__img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  border-radius: 50%;
+  display: none;
+}
+
+.np__av.has-art .np__img { display: block; }
+.np__av.has-art .np__initials { display: none; }
+
 .np__initials {
-  font: 700 13.5px/1 var(--f-ui);
+  font: 700 12px/1 var(--f-ui);
   letter-spacing: 0.01em;
   color: rgba(255, 255, 255, 0.94);
   text-shadow: 0 1px 2px rgba(0, 0, 0, 0.5);
 }
 
+/* Glass over the portrait: one specular from the upper left, and a vignette
+   that seats every avatar — however loud its own art — into the same plate. */
 .np__sheen {
   position: absolute;
   inset: 0;
-  background: linear-gradient(155deg, rgba(255, 255, 255, 0.26) 0%, rgba(255, 255, 255, 0.04) 42%, transparent 62%);
+  border-radius: 50%;
+  background:
+    linear-gradient(155deg, rgba(255, 255, 255, 0.22) 0%, rgba(255, 255, 255, 0.03) 44%, transparent 62%),
+    radial-gradient(118% 118% at 32% 24%, rgba(4, 6, 11, 0) 38%, rgba(4, 6, 11, 0.44) 100%);
+  pointer-events: none;
 }
 
-/* Rarity frame */
+/* Frame: a struck metal ring, lit from the upper left. */
 .np__frame {
   position: absolute;
   inset: 0;
   border-radius: 50%;
-  background: conic-gradient(from 210deg, var(--fr-a, #4a5468), var(--fr-b, #2b3244), var(--fr-a, #4a5468));
-  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.5);
+  background: conic-gradient(
+    from 208deg,
+    var(--fr-a, #636d82) 0deg,
+    var(--fr-b, #333b4d) 108deg,
+    var(--fr-a, #636d82) 196deg,
+    var(--fr-b, #333b4d) 300deg,
+    var(--fr-a, #636d82) 360deg
+  );
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.55), inset 0 0 0 1px rgba(255, 255, 255, 0.12);
 }
 
-.np[data-rarity='common'] { --fr-a: #636d82; --fr-b: #333b4d; }
-.np[data-rarity='rare'] { --fr-a: #7fc6ff; --fr-b: #2d6fae; }
-.np[data-rarity='epic'] { --fr-a: #c99bff; --fr-b: #6b34b0; }
-.np[data-rarity='legendary'] { --fr-a: #ffd88a; --fr-b: #b57a12; }
-.np[data-rarity='mythic'] { --fr-a: #ff9ec4; --fr-b: #b4245f; }
-
-.np[data-rarity='legendary'] .np__frame,
-.np[data-rarity='mythic'] .np__frame {
-  animation: frameSpin 6s linear infinite;
-}
-
-@keyframes frameSpin {
-  to { transform: rotate(1turn); }
-}
-
-.np__heat {
+/* The specular that sells it as metal — static, because nothing on a poker
+   table should spin for no reason. */
+.np__frame::after {
+  content: '';
   position: absolute;
-  inset: -3px;
+  inset: 0;
   border-radius: 50%;
+  background: linear-gradient(152deg, rgba(255, 255, 255, 0.55), rgba(255, 255, 255, 0) 44%);
+  opacity: 0.7;
+}
+
+.np[data-rarity='legendary'] .np__avwrap,
+.np[data-rarity='mythic'] .np__avwrap {
+  filter: drop-shadow(0 0 6px rgba(237, 201, 107, 0.28));
+}
+
+.np[data-rarity='mythic'] .np__avwrap {
+  filter: drop-shadow(0 0 6px rgba(240, 202, 187, 0.34));
+}
+
+/* Dealer button — the one gold disc on the plate. It sits inside the card on
+   reserved padding, so it can never land on the tail of a name. */
+.np__btn {
+  position: absolute;
+  top: 50%;
+  right: 3px;
+  display: grid;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  font: 800 10px/1 var(--f-num);
+  font-style: normal;
+  letter-spacing: 0;
+  color: #2a1e05;
+  background: var(--grad-gold-soft);
+  box-shadow:
+    0 1px 3px rgba(3, 5, 10, 0.6),
+    inset 0 1px 0 rgba(255, 255, 255, 0.55),
+    inset 0 -1px 0 rgba(0, 0, 0, 0.28);
   opacity: 0;
-  background: radial-gradient(closest-side, transparent 62%, rgba(255, 138, 61, 0.55) 78%, transparent 100%);
-  transition: opacity var(--d-base) var(--ease-out);
+  transform: translateY(-50%) scale(0.4);
+  transition: opacity var(--d-fast) var(--ease-out), transform var(--d-base) var(--ease-spring);
+  pointer-events: none;
 }
 
-.np.is-hot .np__heat {
+.np.is-btn .np__card { padding-right: 25px; }
+
+.np.is-btn .np__btn {
   opacity: 1;
-  animation: heatPulse 1.8s var(--ease-in-out) infinite;
+  transform: translateY(-50%) scale(1);
 }
 
-@keyframes heatPulse {
-  0%, 100% { transform: scale(1); opacity: 0.75; }
-  50% { transform: scale(1.09); opacity: 1; }
+/* Muted marker — a struck-through disc, never an emoji. */
+.np__mute {
+  position: absolute;
+  right: -2px;
+  bottom: -2px;
+  z-index: 2;
+  width: 13px;
+  height: 13px;
+  border-radius: 50%;
+  background: var(--c-slate-700);
+  box-shadow: 0 0 0 1.5px rgba(8, 11, 18, 0.92);
+  opacity: 0;
+  transform: scale(0.5);
+  transition: opacity var(--d-fast) var(--ease-out), transform var(--d-base) var(--ease-spring);
+  pointer-events: none;
 }
 
-/* Timer ring */
+.np__mute::before {
+  content: '';
+  position: absolute;
+  left: 2px;
+  right: 2px;
+  top: 5.5px;
+  height: 2px;
+  border-radius: 1px;
+  background: var(--c-slate-200);
+  transform: rotate(-40deg);
+}
+
+.np.is-muted .np__mute {
+  opacity: 1;
+  transform: scale(1);
+}
+
+/* Timer ring — only ever one on the table at a time. */
 .np__ring {
   position: absolute;
   inset: -5px;
-  width: 52px;
-  height: 52px;
+  width: 44px;
+  height: 44px;
   color: var(--c-good);
   opacity: 0;
   transition: opacity var(--d-fast) linear, color var(--d-base) linear;
@@ -324,8 +438,8 @@
 }
 
 .np.is-turn .np__ring { opacity: 1; }
-.np[data-urgency='warn'] .np__ring { color: var(--c-warn); }
-.np[data-urgency='crit'] .np__ring {
+.np.is-turn[data-urgency='warn'] .np__ring { color: var(--c-warn); }
+.np.is-turn[data-urgency='crit'] .np__ring {
   color: var(--c-bad);
   animation: ringPulse 0.62s var(--ease-in-out) infinite;
 }
@@ -344,14 +458,18 @@
 }
 
 .np__name {
-  font: 600 12.5px/1.1 var(--f-ui);
+  font: 600 11.5px/1.14 var(--f-ui);
   letter-spacing: -0.012em;
   color: var(--c-slate-100);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  max-width: 86px;
+  max-width: 96px;
 }
+
+/* Optical sizing: long handles step down rather than truncate mid-word. */
+.np__name[data-len='md'] { font-size: 10.8px; letter-spacing: -0.016em; }
+.np__name[data-len='sm'] { font-size: 10.2px; letter-spacing: -0.02em; }
 
 .np__row {
   display: flex;
@@ -360,13 +478,15 @@
 }
 
 .np__stack {
-  font: 700 13.5px/1.05 var(--f-num);
+  font: 700 13px/1.05 var(--f-num);
+  font-variant-numeric: tabular-nums;
   letter-spacing: -0.02em;
   color: var(--c-white);
 }
 
 .np__bb {
   font: 600 9.5px/1 var(--f-num);
+  font-variant-numeric: tabular-nums;
   color: var(--c-slate-400);
 }
 
@@ -380,11 +500,27 @@
 .np.has-state .np__state { display: block; }
 .np.has-state .np__row { display: none; }
 
+/* Compact variant — used only when the solver has no room left to nudge. */
+.np.is-compact .np__card {
+  min-width: 0;
+  padding-right: 9px;
+}
+
+.np.is-compact .np__name,
+.np.is-compact .np__bb { display: none; }
+.np.is-compact .np__stack { font-size: 12px; }
+
+/* Running hot: a warm bloom on the card, never a second ring on the portrait. */
+.np.is-hot .np__card {
+  box-shadow: var(--e-2), 0 2px 14px rgba(255, 138, 61, 0.3), var(--inset-hi);
+  border-color: rgba(255, 138, 61, 0.26);
+}
+
 /* Turn treatment */
 .np.is-turn .np__card {
   border-color: var(--line-gold);
   box-shadow: var(--e-2), var(--e-gold), var(--inset-hi);
-  background: linear-gradient(180deg, rgba(42, 38, 25, 0.9), rgba(14, 13, 11, 0.94));
+  background: linear-gradient(180deg, rgba(42, 38, 25, 0.92), rgba(14, 13, 11, 0.95));
 }
 
 .np.is-allin .np__card {
@@ -398,7 +534,7 @@
 }
 
 .np--hero .np__card {
-  min-width: 118px;
+  min-width: 108px;
   border-color: rgba(237, 201, 107, 0.24);
 }
 
@@ -409,7 +545,7 @@
   border-style: dashed;
   border-color: var(--line-1);
   box-shadow: none;
-  min-width: 92px;
+  min-width: 88px;
 }
 
 .np.is-empty .np__avwrap,
@@ -420,18 +556,7 @@
   letter-spacing: var(--ls-caps);
   text-transform: uppercase;
   color: var(--c-slate-400);
-}
-
-.np.is-muted .np__card::after {
-  content: '';
-  position: absolute;
-  right: 6px;
-  top: -3px;
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: var(--c-slate-400);
-  box-shadow: 0 0 0 2px rgba(8, 11, 18, 0.9);
+  max-width: none;
 }
 
 /* Last-action pill */
@@ -480,6 +605,7 @@
   bottom: calc(100% + 4px);
   left: 50%;
   font: 800 15px/1 var(--f-num);
+  font-variant-numeric: tabular-nums;
   letter-spacing: -0.02em;
   white-space: nowrap;
   opacity: 0;
@@ -557,6 +683,320 @@
   opacity: 1;
   transform: translate3d(-50%, 0, 0) scale(1);
 }
+
+/* ─────────────────────── player profile sheet ─────────────────────── */
+
+.pp-sheet .r-sheet__head {
+  padding-bottom: 0;
+  min-height: 0;
+}
+
+.pp {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-4);
+  padding-top: var(--sp-1);
+}
+
+/* ── identity */
+.pp__id {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-4);
+}
+
+.pp__port {
+  position: relative;
+  width: 84px;
+  height: 84px;
+  flex: none;
+}
+
+.pp__ring {
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  background: conic-gradient(
+    from 208deg,
+    var(--fr-a, #636d82) 0deg,
+    var(--fr-b, #333b4d) 108deg,
+    var(--fr-a, #636d82) 196deg,
+    var(--fr-b, #333b4d) 300deg,
+    var(--fr-a, #636d82) 360deg
+  );
+  box-shadow:
+    0 0 0 1px rgba(0, 0, 0, 0.5),
+    0 8px 22px rgba(3, 5, 10, 0.55),
+    inset 0 0 0 1px rgba(255, 255, 255, 0.14);
+}
+
+.pp__ring::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  background: linear-gradient(152deg, rgba(255, 255, 255, 0.5), rgba(255, 255, 255, 0) 42%);
+  opacity: 0.7;
+}
+
+.pp__img {
+  position: absolute;
+  inset: 4px;
+  width: calc(100% - 8px);
+  height: calc(100% - 8px);
+  border-radius: 50%;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.18);
+}
+
+.pp__lvl {
+  position: absolute;
+  right: -2px;
+  bottom: -2px;
+  min-width: 26px;
+  height: 22px;
+  padding: 0 6px;
+  display: grid;
+  place-items: center;
+  border-radius: var(--r-pill);
+  font: 700 12px/1 var(--f-num);
+  font-variant-numeric: tabular-nums;
+  color: var(--c-gold-100);
+  background: linear-gradient(180deg, var(--c-slate-700), var(--c-slate-900));
+  border: 1px solid var(--line-gold);
+  box-shadow: var(--e-1);
+}
+
+.pp__who {
+  min-width: 0;
+  flex: 1;
+}
+
+.pp__name {
+  margin: 0;
+  font: var(--t-h2);
+  letter-spacing: -0.026em;
+  color: var(--c-white);
+  overflow-wrap: anywhere;
+}
+
+.pp__title {
+  margin-top: 3px;
+  display: inline-block;
+  padding: 3px 9px;
+  border-radius: var(--r-pill);
+  font: var(--t-micro);
+  letter-spacing: var(--ls-caps);
+  text-transform: uppercase;
+  color: var(--c-gold-200);
+  background: rgba(237, 201, 107, 0.1);
+  border: 1px solid var(--line-gold);
+}
+
+.pp__meta {
+  margin-top: 6px;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font: var(--t-body-sm);
+  color: var(--c-slate-300);
+}
+
+.pp__dot {
+  width: 3px;
+  height: 3px;
+  border-radius: 50%;
+  background: var(--c-slate-500);
+  flex: none;
+}
+
+.pp__stack {
+  margin-top: 8px;
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+}
+
+.pp__sv {
+  font: 700 17px/1 var(--f-num);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.02em;
+  color: var(--c-white);
+}
+
+.pp__sb {
+  font: 600 11px/1 var(--f-num);
+  font-variant-numeric: tabular-nums;
+  color: var(--c-slate-400);
+}
+
+.pp__sl {
+  font: var(--t-micro);
+  letter-spacing: var(--ls-caps);
+  text-transform: uppercase;
+  color: var(--c-slate-400);
+}
+
+/* ── the read */
+.pp__read {
+  position: relative;
+  padding: var(--sp-3) var(--sp-4);
+  border-radius: var(--r-md);
+  background: var(--s-sunken);
+  border: 1px solid var(--line-1);
+  box-shadow: var(--inset-hi);
+  overflow: hidden;
+}
+
+.pp__read::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 3px;
+  background: var(--c-slate-400);
+}
+
+.pp__read[data-tone='good']::before { background: var(--c-good); }
+.pp__read[data-tone='warn']::before { background: var(--c-warn); }
+.pp__read[data-tone='bad']::before { background: var(--c-bad); }
+.pp__read[data-tone='epic']::before { background: var(--grad-gold-soft); }
+.pp__read[data-tone='info']::before { background: var(--c-info); }
+
+.pp__rl {
+  font: var(--t-micro);
+  letter-spacing: var(--ls-caps);
+  text-transform: uppercase;
+  color: var(--c-slate-300);
+}
+
+.pp__read[data-tone='good'] .pp__rl { color: var(--c-good); }
+.pp__read[data-tone='warn'] .pp__rl { color: var(--c-warn); }
+.pp__read[data-tone='bad'] .pp__rl { color: #ff8f8b; }
+.pp__read[data-tone='epic'] .pp__rl { color: var(--c-gold-300); }
+.pp__read[data-tone='info'] .pp__rl { color: var(--c-info); }
+
+.pp__rb {
+  margin: 4px 0 0;
+  font: var(--t-body);
+  color: var(--c-slate-100);
+}
+
+.pp__rt {
+  margin: 6px 0 0;
+  font: var(--t-body-sm);
+  font-style: italic;
+  color: var(--c-slate-400);
+}
+
+/* ── observed numbers */
+.pp__head {
+  font: var(--t-micro);
+  letter-spacing: var(--ls-caps);
+  text-transform: uppercase;
+  color: var(--c-slate-400);
+  margin-bottom: calc(-1 * var(--sp-2));
+}
+
+.pp__tiles {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--sp-2);
+}
+
+.pp__tile {
+  min-height: 62px;
+  padding: 10px 12px;
+  border-radius: var(--r-md);
+  background: var(--s-card);
+  border: 1px solid var(--line-1);
+  box-shadow: var(--inset-hi);
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  gap: 6px;
+}
+
+.pp__tl {
+  font: var(--t-micro);
+  letter-spacing: var(--ls-caps);
+  text-transform: uppercase;
+  color: var(--c-slate-400);
+}
+
+.pp__tv {
+  font: 700 19px/1 var(--f-num);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.026em;
+  color: var(--c-white);
+}
+
+.pp__tv[data-tone='up'] { color: var(--c-good); }
+.pp__tv[data-tone='down'] { color: #ff8f8b; }
+
+.pp__tv--soft {
+  font: var(--t-body-sm);
+  letter-spacing: 0;
+  color: var(--c-slate-400);
+}
+
+.pp__note {
+  margin: calc(-1 * var(--sp-2)) 0 0;
+  font: var(--t-body-sm);
+  color: var(--c-slate-400);
+}
+
+/* ── actions */
+.pp__acts {
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: 1fr;
+  gap: var(--sp-2);
+  margin-bottom: var(--sp-2);
+}
+
+.pp__act {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: 68px;
+  padding: 10px 4px;
+  border-radius: var(--r-md);
+  background: var(--s-card);
+  border: 1px solid var(--line-2);
+  box-shadow: var(--e-1), var(--inset-hi);
+  color: var(--c-slate-100);
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  transition: transform var(--d-fast) var(--ease-out), border-color var(--d-fast) var(--ease-out);
+}
+
+.pp__act.is-pressed { transform: scale(0.96); }
+
+.pp__ai {
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  color: var(--c-slate-200);
+}
+
+.pp__al {
+  font: var(--t-label);
+  letter-spacing: -0.01em;
+  color: var(--c-slate-200);
+  text-align: center;
+}
+
+.pp__act.is-on {
+  border-color: var(--line-gold);
+  background: linear-gradient(180deg, rgba(237, 201, 107, 0.12), rgba(17, 21, 31, 0.9));
+}
+
+.pp__act.is-on .pp__ai,
+.pp__act.is-on .pp__al { color: var(--c-gold-200); }
 
 /* ───────────────────────────── pot ───────────────────────────── */
 
@@ -2925,8 +3365,10 @@
   .ab__b-t { font-size: 14.5px; }
   .ab__chip { min-width: 52px; height: 34px; padding: 0 10px; font-size: 12px; }
   .ab__pre { height: 44px; font-size: 11.5px; gap: 5px; }
-  .np__card { min-width: 96px; max-width: 132px; }
-  .np__name { max-width: 74px; font-size: 12px; }
+  /* Narrow phones get a tighter plate, but the name keeps enough room that
+     the optical-sizing steps can do their job instead of the ellipsis. */
+  .np__card { min-width: 88px; max-width: 144px; }
+  .np__name { max-width: 86px; }
   .wn__plate { min-width: 240px; }
   .wn__cat { font-size: 22px; }
   .bi__amt { font-size: 36px; }
@@ -2942,9 +3384,7 @@
   .bi__go-sheen,
   .wn__shimmer,
   .wn__rays,
-  .np[data-rarity='legendary'] .np__frame,
-  .np[data-rarity='mythic'] .np__frame,
-  .np.is-hot .np__heat,
+  .np.is-turn[data-urgency='crit'] .np__ring,
   .ov__chip,
   .ab__b--raise.is-holding {
     animation: none;

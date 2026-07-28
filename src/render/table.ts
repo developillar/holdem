@@ -1,9 +1,10 @@
 /**
  * The poker table.
  *
- * An oval sized for a portrait phone: long axis running into the screen so
- * the hero seat lands in the lower third and the board sits just above the
- * optical centre. Everything is a procedural sweep — no imported meshes.
+ * A long oval sized for a portrait phone. The long axis runs into the screen,
+ * so the hero seat lands in the lower third at close range — big, dominant,
+ * unmistakably *yours* — while the far end recedes and reads as depth rather
+ * than as a second row of players.
  *
  * Layers, outside in:
  *   floor + contact shadow → pedestal → skirt → padded leather rail →
@@ -11,6 +12,14 @@
  *
  * `layout` is the world-space contract the card and chip systems build
  * against: seat anchors, board slots, pot centre, dealer and muck.
+ *
+ * ── Portrait seat geometry ────────────────────────────────────────────────
+ * Nine seats around an oval in a 393 pt viewport is the whole reason the
+ * table read as crowded: at that ring density two nameplates land inside
+ * 60 CSS px of each other and the community band has nowhere to breathe.
+ * `DEFAULT_TABLE_SIZE` is therefore 6, every ring is mirror-symmetric about
+ * the screen's vertical axis, and the middle third of the felt is reserved
+ * for `BOARD_SLOTS` — no seat's hole cards are allowed into it.
  */
 import * as THREE from 'three';
 import {
@@ -34,12 +43,17 @@ import { textures } from './textures.ts';
 
 // ─────────────────────────── dimensions ───────────────────────────
 
-/** Playing surface half-extents, in metres. */
-const FELT_RX = 0.86;
-const FELT_RZ = 1.3;
+/**
+ * Playing surface half-extents, in metres. 1 : 1.88, which is a real casino
+ * oval (a 3 m table is 1.9 : 1) and is what makes the far rail recede instead
+ * of hovering. Rounder than this and the camera has to climb to fit it, which
+ * turns the shot into a floor plan; longer and the far seats stop resolving.
+ */
+const FELT_RX = 0.8;
+const FELT_RZ = 1.5;
 /** Padded rail: width across the roll and height at the crest. */
-const RAIL_W = 0.17;
-const RAIL_H = 0.092;
+const RAIL_W = 0.152;
+const RAIL_H = 0.088;
 const RAIL_CX = FELT_RX + RAIL_W / 2;
 const RAIL_CZ = FELT_RZ + RAIL_W / 2;
 const RAIL_OUT_X = FELT_RX + RAIL_W;
@@ -49,34 +63,84 @@ const FELT_Y = 0;
 const CARD_LIFT = 0.0035;
 const CHIP_LIFT = 0.002;
 
-const BET_RX = 0.68;
-const BET_RZ = 1.0;
+/** Betting line: inside every seat's chips, outside the community band. */
+const BET_RX = 0.6;
+const BET_RZ = 1.06;
 
-const BOARD_PITCH = 0.205;
-const BOARD_Z = -0.115;
+/** Community row. Five cards, centred, filling 70 % of the felt's width. */
+const BOARD_PITCH = 0.226;
+const BOARD_Z = -0.1;
+
+const CARD_W = 0.21;
+const CARD_H = 0.292;
 
 const FLOOR_Y = -0.88;
 
-const SEG_U = 168;
+const SEG_U = 192;
+
+/**
+ * How far along the seat's radius its hole cards sit. Opponents ride close
+ * to the rail so the middle of the felt stays empty; the hero comes further
+ * in because those two cards are the most important object on the screen.
+ */
+const HERO_CARD_R = 0.795;
+const OPP_CARD_R = 0.865;
+
+/**
+ * Nameplate anchor ring, as a fraction of the rail centre-line. The widest
+ * point of the oval is where a 110 px plate has the least room on a 360 px
+ * phone, so seats out there get pulled in — `cos⁶` makes that pull vanish
+ * within about 30° of the extreme instead of shrinking the whole ring.
+ */
+const PLATE_KX = 0.955;
+const PLATE_KX_SIDE_PULL = 0.07;
+const PLATE_KZ = 0.975;
+const HERO_PLATE_KZ = 0.94;
+
+/** Ramanujan II — accurate to ~1e-5 at these eccentricities. */
+function ellipsePerimeter(a: number, b: number): number {
+  const h = ((a - b) / (a + b)) ** 2;
+  return Math.PI * (a + b) * (1 + (3 * h) / (10 + Math.sqrt(4 - 3 * h)));
+}
+
+const RAIL_PERIMETER = ellipsePerimeter(RAIL_CX, RAIL_CZ);
 
 // ─────────────────────────── seat angles ───────────────────────────
 
 /**
- * Hand-authored per table size. Slot 0 is always the hero at θ=90°, i.e.
- * nearest the camera, and every table is mirror-symmetric about the screen's
- * vertical axis — asymmetric seat rings read as a bug even when they are not.
+ * Hand-authored per table size, in degrees, counter-clockwise from +X.
+ * θ = 90° is the near end of the oval — the hero, closest to the camera —
+ * and every ring is closed under the mirror θ → 180° − θ so the layout is
+ * symmetric about the screen's vertical axis. (That constraint is why the
+ * odd sizes have no seat at θ = 270°: 90° and 270° are the only self-mirror
+ * angles, so a symmetric ring can hold at most one of each pair of them.)
+ *
+ * Sizes are also *biased toward the far arc*: the hero owns the whole near
+ * end, so no opponent comes within 36° of the near axis. That is what keeps
+ * the lower third of the frame clear for the hero's cards, the hero's chips
+ * and the action bar underneath them.
+ *
+ * Measured at 393 × 852 with the shipped camera, the tightest pair of
+ * nameplate anchors is 135 px apart at 6-max and 100 px at 9-max.
  */
 const SEAT_ANGLES_DEG: Record<number, number[]> = {
   1: [90],
   2: [90, 270],
   3: [90, 210, 330],
-  4: [90, 170, 270, 10],
-  5: [90, 150, 210, 330, 30],
-  6: [90, 150, 205, 270, 335, 30],
-  7: [90, 141, 192, 243, 297, 348, 39],
-  8: [90, 138, 186, 234, 270, 306, 354, 42],
-  9: [90, 130, 170, 210, 250, 290, 330, 10, 50],
+  4: [90, 165, 270, 15],
+  5: [90, 153, 221, 319, 27],
+  6: [90, 148, 212, 270, 328, 32],
+  7: [90, 128, 165, 226, 314, 15, 52],
+  8: [90, 128, 165, 212, 270, 328, 15, 52],
+  9: [90, 126, 160, 204, 246, 294, 336, 20, 54],
 };
+
+/**
+ * Six-max is the house default. Nine seats still exist and are still
+ * correct, but they are an opt-in for a full ring, not the shape a phone
+ * gets handed on open.
+ */
+export const DEFAULT_TABLE_SIZE = 6;
 
 export interface SeatAnchors {
   slot: number;
@@ -102,8 +166,17 @@ function ellipse(rx: number, rz: number, a: number, y: number): THREE.Vector3 {
   return new THREE.Vector3(rx * Math.cos(a), y, rz * Math.sin(a));
 }
 
+/**
+ * Tangential offsets for the four hole-card slots, in units of `spread`.
+ * Slots 0 and 1 straddle the centre so a two-card hand is symmetric about
+ * the seat axis; 2 and 3 extend the row outward for PLO. Ordering the row
+ * this way rather than left-to-right is what stops a Hold'em hand from
+ * sitting a full card-width left of where the player is looking.
+ */
+const CARD_OFFSETS = [0.5, -0.5, 1.5, -1.5];
+
 function buildSeats(size: number): SeatAnchors[] {
-  const degs = SEAT_ANGLES_DEG[size] ?? SEAT_ANGLES_DEG[9];
+  const degs = SEAT_ANGLES_DEG[size] ?? SEAT_ANGLES_DEG[DEFAULT_TABLE_SIZE];
   return degs.map((deg, slot) => {
     const a = (deg * Math.PI) / 180;
     const cos = Math.cos(a);
@@ -112,12 +185,16 @@ function buildSeats(size: number): SeatAnchors[] {
     const inward = new THREE.Vector3(-edge.x, 0, -edge.z).normalize();
     const tangent = new THREE.Vector3(-inward.z, 0, inward.x);
     const hero = slot === 0;
-    const cardR = hero ? 0.845 : 0.8;
-    const spread = hero ? 0.062 : 0.05;
+
+    // Seats out on the long sides are the ones whose cards would drift into
+    // the community band, so they get pushed hardest into the rail.
+    const sideBias = 1 - Math.abs(sin);
+    const cardR = hero ? HERO_CARD_R : OPP_CARD_R + 0.058 * sideBias;
+    const spread = hero ? 0.068 : 0.054;
     const cardOrigin = new THREE.Vector3(edge.x * cardR, FELT_Y + CARD_LIFT, edge.z * cardR);
     const cards: THREE.Vector3[] = [];
     for (let i = 0; i < 4; i++) {
-      const t = (i - 1.5) * spread;
+      const t = CARD_OFFSETS[i] * spread;
       cards.push(
         new THREE.Vector3(
           cardOrigin.x + tangent.x * t,
@@ -126,25 +203,36 @@ function buildSeats(size: number): SeatAnchors[] {
         ),
       );
     }
-    const betPoint = ellipse(BET_RX, BET_RZ, a, FELT_Y + CHIP_LIFT).multiplyScalar(1);
-    betPoint.multiplyScalar(0.9);
+
+    // Street bets land just inside the printed line, nudged off the seat
+    // axis so a bet never buries the seat's own hole cards.
+    const betPoint = ellipse(BET_RX, BET_RZ, a, FELT_Y + CHIP_LIFT).multiplyScalar(0.88);
+    betPoint.x += tangent.x * 0.11;
+    betPoint.z += tangent.z * 0.11;
     betPoint.y = FELT_Y + CHIP_LIFT;
+
     const stack = new THREE.Vector3(
-      edge.x * 0.9 + tangent.x * 0.2,
+      edge.x * (cardR - 0.04) - tangent.x * 0.235,
       FELT_Y + CHIP_LIFT,
-      edge.z * 0.9 + tangent.z * 0.2,
+      edge.z * (cardR - 0.04) - tangent.z * 0.235,
     );
     const button = new THREE.Vector3(
-      edge.x * 0.7 - tangent.x * 0.17,
+      edge.x * (cardR - 0.13) + tangent.x * 0.205,
       FELT_Y + 0.004,
-      edge.z * 0.7 - tangent.z * 0.17,
+      edge.z * (cardR - 0.13) + tangent.z * 0.205,
     );
+
     return {
       slot,
       angle: a,
-      // Pulled a little inside the rail crest: pinned at the true widest
-      // point a 120 px nameplate hangs off the screen on a 360 px device.
-      plate: ellipse(RAIL_CX * 0.93, RAIL_CZ * 0.965, a, RAIL_H * 0.96),
+      // Pinned a touch inside the rail crest: at the true widest point a
+      // 120 px nameplate hangs off the screen on a 360 px device.
+      plate: ellipse(
+        RAIL_CX * (PLATE_KX - PLATE_KX_SIDE_PULL * cos ** 6),
+        RAIL_CZ * (hero ? HERO_PLATE_KZ : PLATE_KZ),
+        a,
+        RAIL_H * 1.02,
+      ),
       cards,
       bet: betPoint,
       stack,
@@ -189,6 +277,7 @@ export const layout = {
   RAIL_CZ,
   RAIL_OUT_X,
   RAIL_OUT_Z,
+  RAIL_PERIMETER,
   FLOOR_Y,
   BET_RX,
   BET_RZ,
@@ -196,15 +285,17 @@ export const layout = {
   SEAT_POSITIONS,
   SEAT_ANGLES_DEG,
   BOARD_SLOTS,
-  POT_CENTER: new THREE.Vector3(0, FELT_Y + CHIP_LIFT, 0.24),
+  POT_CENTER: new THREE.Vector3(0, FELT_Y + CHIP_LIFT, 0.34),
   /** deal origin — the dealer's chute at the far end of the felt */
-  DEALER_POS: new THREE.Vector3(0, FELT_Y + 0.03, -(FELT_RZ - 0.1)),
+  DEALER_POS: new THREE.Vector3(0, FELT_Y + 0.03, -(FELT_RZ - 0.11)),
   /** folded cards fly here and fade */
-  MUCK_POS: new THREE.Vector3(0.46, FELT_Y + 0.02, -(FELT_RZ - 0.26)),
+  MUCK_POS: new THREE.Vector3(0.44, FELT_Y + 0.02, -(FELT_RZ - 0.3)),
   /** suggested render sizes so cards and chips stay in proportion */
-  CARD_SIZE: { w: 0.19, h: 0.265, t: 0.0055 },
-  CHIP_SIZE: { r: 0.058, h: 0.011 },
+  CARD_SIZE: { w: CARD_W, h: CARD_H, t: 0.006 },
+  CHIP_SIZE: { r: 0.061, h: 0.0115 },
   BOARD_PITCH,
+  /** the ring the table screen should ask for unless the user picks otherwise */
+  DEFAULT_SIZE: DEFAULT_TABLE_SIZE,
   sizes: [2, 3, 4, 5, 6, 7, 8, 9],
   seats: seatsFor,
   seat(size: number, slot: number): SeatAnchors {
@@ -213,7 +304,7 @@ export const layout = {
   },
   /** engine seat index → visual slot, so the local player is always slot 0 */
   slotFor(seat: number, heroSeat: number, size: number): number {
-    return ((seat - heroSeat) % size + size) % size;
+    return (((seat - heroSeat) % size) + size) % size;
   },
   boardSlot(i: number): THREE.Vector3 {
     return BOARD_SLOTS[Math.max(0, Math.min(4, i))];
@@ -244,28 +335,33 @@ export interface TableSkin {
   betLineStrength: number;
 }
 
+/**
+ * Mirrors `tokens.css` exactly — felt-700 cloth, felt-500 accent, felt-900
+ * shadow, gold-300 line, slate-100 ink. GLSL cannot read a custom property,
+ * so the 3D layer restates the palette rather than inventing one.
+ */
 export const DEFAULT_SKIN: TableSkin = {
-  feltColor: '#103a28',
-  feltAccent: '#175139',
+  feltColor: '#14432d',
+  feltAccent: '#1c5a3c',
   feltEdge: '#06180f',
-  feltSheen: '#3f6b54',
+  feltSheen: '#2c7350',
   railMaterial: 'leather',
-  railColor: '#3a2a20',
-  stitchColor: '#8f7448',
-  seamColor: '#0a0705',
+  railColor: '#2f2118',
+  stitchColor: '#c08d21',
+  seamColor: '#090604',
   logoId: 'royale-classic',
   logoTint: '#dfe4ee',
-  logoOpacity: 0.26,
+  logoOpacity: 0.3,
   trimMetal: 'gold',
   betLineColor: '#edc96b',
-  betLineStrength: 0.34,
+  betLineStrength: 0.38,
 };
 
 const TRIM_METALS: Record<TrimMetalId, { color: string; roughness: number; aniso: number }> = {
-  gold: { color: '#b58a30', roughness: 0.66, aniso: 0.3 },
-  platinum: { color: '#b4bdcb', roughness: 0.58, aniso: 0.32 },
-  copper: { color: '#9d6234', roughness: 0.68, aniso: 0.3 },
-  gunmetal: { color: '#474e59', roughness: 0.72, aniso: 0.26 },
+  gold: { color: '#a8791d', roughness: 0.76, aniso: 0.34 },
+  platinum: { color: '#9aa4b2', roughness: 0.72, aniso: 0.34 },
+  copper: { color: '#8a552e', roughness: 0.78, aniso: 0.32 },
+  gunmetal: { color: '#3f454f', roughness: 0.82, aniso: 0.28 },
 };
 
 // ─────────────────────────── geometry builders ───────────────────────────
@@ -416,7 +512,7 @@ function buildFelt(rings: number, segU: number): THREE.BufferGeometry {
     const ex = bx * cos - nx * inset;
     const ez = bz * sin - nz * inset;
     for (let r = 0; r <= rings; r++) {
-      // squared ramp packs vertices toward the rim where the AO gradient is
+      // sub-linear ramp packs vertices toward the rim where the AO gradient is
       const t = Math.pow(r / rings, 0.85);
       const o = p * 3;
       pos[o] = ex * t;
@@ -451,7 +547,13 @@ function buildFelt(rings: number, segU: number): THREE.BufferGeometry {
 }
 
 /** Flat elliptical cap, used to close the pedestal and the skirt underside. */
-function buildCap(rx: number, rz: number, y: number, segU: number, up: boolean): THREE.BufferGeometry {
+function buildCap(
+  rx: number,
+  rz: number,
+  y: number,
+  segU: number,
+  up: boolean,
+): THREE.BufferGeometry {
   const pos = new Float32Array((segU + 2) * 3);
   const nor = new Float32Array((segU + 2) * 3);
   const uvs = new Float32Array((segU + 2) * 2);
@@ -505,40 +607,50 @@ export function createTable(env: THREE.Texture | null): TableHandle {
   const skin: TableSkin = { ...DEFAULT_SKIN };
 
   // ── felt ───────────────────────────────────────────────────────────
+  // The inlay is deliberately taller than it is wide: at a 46° camera the
+  // z axis is foreshortened by sin(46°), so a 1 : 1.39 world rectangle is
+  // what reads as a *circle* on screen.
+  const LOGO_HALF_W = 0.3;
+  const LOGO_HALF_H = 0.4;
+  const LOGO_CZ = -0.63;
+
   const feltUniforms = {
     uFeltRadii: { value: new THREE.Vector2(FELT_RX, FELT_RZ) },
     uFeltEdge: { value: new THREE.Color(skin.feltEdge) },
     uFeltAccent: { value: new THREE.Color(skin.feltAccent) },
-    uFiberScale: { value: 30.0 },
-    uNapStrength: { value: 0.055 },
-    uWear: { value: 0.2 },
+    // ~2.4 cm weave cell — about five device pixels at portrait framing,
+    // which is the largest the cloth can be before it stops reading as nap
+    // and the smallest before it aliases into crawl.
+    uFiberScale: { value: 84.0 },
+    uNapStrength: { value: 0.07 },
+    uWear: { value: 0.17 },
     uLogoMap: { value: tex.get(`logo:${skin.logoId}`) },
-    uLogoRect: { value: new THREE.Vector4(0, 0.06, 0.34, 0.34) },
+    uLogoRect: { value: new THREE.Vector4(0, LOGO_CZ, LOGO_HALF_W, LOGO_HALF_H) },
     uLogoTint: { value: new THREE.Color(skin.logoTint) },
     uLogoOpacity: { value: skin.logoOpacity },
     uBetRadii: { value: new THREE.Vector2(BET_RX, BET_RZ) },
     uBetColor: { value: new THREE.Color(skin.betLineColor) },
     uBetStrength: { value: skin.betLineStrength },
-    uPool: { value: new THREE.Vector4(0, -0.05, 0.5, 1.95) },
-    uPoolStrength: { value: 0.3 },
-    uPoolTint: { value: new THREE.Color('#3a2a12') },
+    uPool: { value: new THREE.Vector4(0, -0.12, 0.44, 1.62) },
+    uPoolStrength: { value: 0.42 },
+    uPoolTint: { value: new THREE.Color('#4a3316') },
   };
 
   const feltMat = new THREE.MeshPhysicalMaterial({
     color: new THREE.Color(skin.feltColor),
     roughness: 0.95,
     metalness: 0,
-    sheen: 0.3,
+    sheen: 0.85,
     sheenColor: new THREE.Color(skin.feltSheen),
-    sheenRoughness: 0.85,
+    sheenRoughness: 0.6,
     normalMap: tex.get('felt-normal'),
-    normalScale: new THREE.Vector2(0.62, 0.62),
+    normalScale: new THREE.Vector2(0.66, 0.66),
     roughnessMap: tex.get('felt-rough'),
     envMapIntensity: 0.07,
     dithering: true,
   });
-  feltMat.normalMap!.repeat.set(4.5, 4.5);
-  feltMat.roughnessMap!.repeat.set(9, 9);
+  feltMat.normalMap!.repeat.set(5, 5);
+  feltMat.roughnessMap!.repeat.set(10, 10);
   feltMat.onBeforeCompile = (shader) => {
     Object.assign(shader.uniforms, feltUniforms);
     shader.vertexShader = shader.vertexShader
@@ -556,62 +668,69 @@ export function createTable(env: THREE.Texture | null): TableHandle {
         `#include <normal_fragment_maps>\n${feltNormalFragment}`,
       );
   };
-  feltMat.customProgramCacheKey = () => 'royale-felt-v1';
+  feltMat.customProgramCacheKey = () => 'royale-felt-v2';
 
-  const felt = new THREE.Mesh(buildFelt(14, SEG_U), feltMat);
+  const felt = new THREE.Mesh(buildFelt(18, SEG_U), feltMat);
   felt.name = 'felt';
   felt.receiveShadow = true;
   felt.renderOrder = 0;
   group.add(felt);
 
   // ── rail ───────────────────────────────────────────────────────────
+  // Fifteen points, not eight: the crest needs a genuine flat where a
+  // forearm would rest, the inner edge needs a hard chamfer to catch the
+  // felt bounce, and the outer edge needs a bead to break the skirt.
   const hw = RAIL_W / 2;
   const railProfile: ProfilePoint[] = [
-    { w: -hw - 0.006, h: 0.004 },
-    { w: -hw + 0.004, h: 0.016 },
-    { w: -hw + 0.014, h: 0.038 },
-    { w: -hw + 0.032, h: 0.062 },
-    { w: -hw + 0.056, h: 0.081 },
-    { w: -0.012, h: RAIL_H },
-    { w: 0.022, h: RAIL_H - 0.002 },
-    { w: hw - 0.05, h: 0.079 },
-    { w: hw - 0.026, h: 0.058 },
-    { w: hw - 0.008, h: 0.03 },
-    { w: hw, h: 0.008 },
-    { w: hw - 0.002, h: -0.012 },
-    { w: hw - 0.014, h: -0.03 },
+    { w: -hw - 0.008, h: 0.002 },
+    { w: -hw + 0.002, h: 0.01 },
+    { w: -hw + 0.008, h: 0.024 },
+    { w: -hw + 0.018, h: 0.045 },
+    { w: -hw + 0.034, h: 0.068 },
+    { w: -hw + 0.052, h: 0.082 },
+    { w: -0.014, h: RAIL_H },
+    { w: 0.018, h: RAIL_H - 0.0015 },
+    { w: hw - 0.05, h: 0.08 },
+    { w: hw - 0.03, h: 0.062 },
+    { w: hw - 0.014, h: 0.036 },
+    { w: hw - 0.003, h: 0.014 },
+    { w: hw, h: -0.004 },
+    { w: hw - 0.004, h: -0.02 },
+    { w: hw - 0.016, h: -0.036 },
   ];
 
   const railUniforms = {
-    uGrainScale: { value: 5.5 },
-    uGrainDepth: { value: 0.18 },
-    uCreaseDepth: { value: 0.2 },
+    uGrainScale: { value: 34.0 },
+    uGrainDepth: { value: 0.2 },
+    uCreaseDepth: { value: 0.22 },
     uSeamColor: { value: new THREE.Color(skin.seamColor) },
     uThreadColor: { value: new THREE.Color(skin.stitchColor) },
     uCrestTint: { value: new THREE.Color('#c9a878') },
-    uStitch: { value: new THREE.Vector4(0.2, 148.0, 0.014, 0.026) },
+    // 172 stitches around a 7.37 m perimeter ≈ 43 mm pitch: chunky saddle
+    // stitching that still resolves as discrete dashes on a 3× display.
+    uStitch: { value: new THREE.Vector4(0.185, 172.0, 0.013, 0.024) },
     uStitchOn: { value: 1.0 },
     uPolish: { value: 0.85 },
-    uRailWear: { value: 0.12 },
-    uArcAspect: { value: 7.4 },
+    uRailWear: { value: 0.13 },
+    uArcAspect: { value: RAIL_PERIMETER },
   };
 
   const railMat = new THREE.MeshPhysicalMaterial({
     color: new THREE.Color(skin.railColor),
-    roughness: 0.64,
+    roughness: 0.62,
     metalness: 0,
-    clearcoat: 0.42,
-    clearcoatRoughness: 0.36,
+    clearcoat: 0.46,
+    clearcoatRoughness: 0.34,
     normalMap: tex.get('leather-normal'),
-    normalScale: new THREE.Vector2(0.5, 0.5),
+    normalScale: new THREE.Vector2(0.55, 0.55),
     roughnessMap: tex.get('leather-rough'),
     aoMap: tex.get('rail-ao'),
-    aoMapIntensity: 0.9,
-    envMapIntensity: 1.45,
+    aoMapIntensity: 0.95,
+    envMapIntensity: 0.7,
     dithering: true,
   });
-  railMat.normalMap!.repeat.set(20, 3);
-  railMat.roughnessMap!.repeat.set(20, 3);
+  railMat.normalMap!.repeat.set(22, 3);
+  railMat.roughnessMap!.repeat.set(22, 3);
   railMat.aoMap!.repeat.set(1, 1);
   railMat.aoMap!.wrapS = THREE.ClampToEdgeWrapping;
   railMat.onBeforeCompile = (shader) => {
@@ -631,7 +750,7 @@ export function createTable(env: THREE.Texture | null): TableHandle {
         `#include <normal_fragment_maps>\n${railNormalFragment}`,
       );
   };
-  railMat.customProgramCacheKey = () => 'royale-rail-v1';
+  railMat.customProgramCacheKey = () => 'royale-rail-v2';
 
   const rail = new THREE.Mesh(buildSweep(RAIL_CX, RAIL_CZ, railProfile, SEG_U), railMat);
   rail.name = 'rail';
@@ -650,17 +769,17 @@ export function createTable(env: THREE.Texture | null): TableHandle {
     normalScale: new THREE.Vector2(0.18, 0.18),
     anisotropy: trimMeta.aniso,
     anisotropyRotation: 0,
-    envMapIntensity: 0.34,
+    envMapIntensity: 0.14,
     dithering: true,
   });
   trimMat.roughnessMap!.repeat.set(6, 1);
   trimMat.normalMap!.repeat.set(6, 1);
 
-  const beadR = 0.017;
+  const beadR = 0.0105;
   const beadProfile: ProfilePoint[] = [];
-  for (let i = 0; i <= 10; i++) {
-    const a = Math.PI * (1 - i / 10);
-    beadProfile.push({ w: Math.cos(a) * beadR, h: 0.006 + Math.sin(a) * beadR });
+  for (let i = 0; i <= 12; i++) {
+    const a = Math.PI * (1 - i / 12);
+    beadProfile.push({ w: Math.cos(a) * beadR, h: 0.0035 + Math.sin(a) * beadR });
   }
   const trimCX = FELT_RX + 0.004;
   const trimCZ = FELT_RZ + 0.004;
@@ -672,11 +791,11 @@ export function createTable(env: THREE.Texture | null): TableHandle {
 
   // ── outer trim band around the skirt ───────────────────────────────
   const bandProfile: ProfilePoint[] = [
-    { w: 0.0, h: -0.028 },
-    { w: 0.004, h: -0.034 },
-    { w: 0.005, h: -0.052 },
-    { w: 0.001, h: -0.07 },
-    { w: -0.004, h: -0.078 },
+    { w: 0.0, h: -0.03 },
+    { w: 0.004, h: -0.036 },
+    { w: 0.005, h: -0.054 },
+    { w: 0.001, h: -0.072 },
+    { w: -0.004, h: -0.08 },
   ];
   const band = new THREE.Mesh(
     buildSweep(RAIL_OUT_X - 0.014, RAIL_OUT_Z - 0.014, bandProfile, SEG_U),
@@ -697,11 +816,11 @@ export function createTable(env: THREE.Texture | null): TableHandle {
   });
 
   const skirtProfile: ProfilePoint[] = [
-    { w: -0.012, h: -0.072 },
-    { w: -0.026, h: -0.11 },
-    { w: -0.05, h: -0.17 },
-    { w: -0.086, h: -0.225 },
-    { w: -0.13, h: -0.256 },
+    { w: -0.012, h: -0.074 },
+    { w: -0.026, h: -0.112 },
+    { w: -0.05, h: -0.172 },
+    { w: -0.086, h: -0.227 },
+    { w: -0.13, h: -0.258 },
   ];
   const skirt = new THREE.Mesh(
     buildSweep(RAIL_OUT_X - 0.014, RAIL_OUT_Z - 0.014, skirtProfile, SEG_U),
@@ -712,25 +831,25 @@ export function createTable(env: THREE.Texture | null): TableHandle {
   group.add(skirt);
 
   const underCap = new THREE.Mesh(
-    buildCap(RAIL_OUT_X - 0.144, RAIL_OUT_Z - 0.144, -0.256, 64, false),
+    buildCap(RAIL_OUT_X - 0.144, RAIL_OUT_Z - 0.144, -0.258, 64, false),
     bodyMat,
   );
   group.add(underCap);
 
   const columnProfile: ProfilePoint[] = [
-    { w: 0.0, h: -0.256 },
+    { w: 0.0, h: -0.258 },
     { w: -0.02, h: -0.34 },
     { w: -0.03, h: -0.58 },
     { w: -0.014, h: -0.78 },
     { w: 0.06, h: -0.85 },
     { w: 0.09, h: FLOOR_Y + 0.005 },
   ];
-  const column = new THREE.Mesh(buildSweep(0.3, 0.42, columnProfile, 72), bodyMat);
+  const column = new THREE.Mesh(buildSweep(0.3, 0.44, columnProfile, 72), bodyMat);
   column.name = 'pedestal';
   column.castShadow = true;
   group.add(column);
 
-  const footCap = new THREE.Mesh(buildCap(0.39, 0.51, FLOOR_Y + 0.005, 64, true), bodyMat);
+  const footCap = new THREE.Mesh(buildCap(0.39, 0.53, FLOOR_Y + 0.005, 64, true), bodyMat);
   group.add(footCap);
 
   // ── floor + contact shadow ─────────────────────────────────────────
@@ -738,7 +857,7 @@ export function createTable(env: THREE.Texture | null): TableHandle {
     uNear: { value: new THREE.Color('#0b0d13') },
     uFar: { value: new THREE.Color('#04050a') },
     uTableRadii: { value: new THREE.Vector2(RAIL_OUT_X, RAIL_OUT_Z) },
-    uShadow: { value: 0.62 },
+    uShadow: { value: 0.66 },
   };
   const floorMat = new THREE.ShaderMaterial({
     uniforms: floorUniforms,
@@ -764,7 +883,7 @@ export function createTable(env: THREE.Texture | null): TableHandle {
     color: 0x000000,
   });
   const contact = new THREE.Mesh(new THREE.PlaneGeometry(1, 1, 1, 1), contactMat);
-  contact.scale.set(RAIL_OUT_X * 2.7, RAIL_OUT_Z * 2.2, 1);
+  contact.scale.set(RAIL_OUT_X * 2.7, RAIL_OUT_Z * 2.1, 1);
   contact.rotation.x = -Math.PI / 2;
   contact.position.y = FLOOR_Y + 0.004;
   contact.renderOrder = -1;
@@ -783,15 +902,15 @@ export function createTable(env: THREE.Texture | null): TableHandle {
         railMat.map = null;
         railMat.normalMap = t.get('leather-normal');
         railMat.roughnessMap = t.get('leather-rough');
-        railMat.normalScale.set(0.5, 0.5);
-        railMat.roughness = 0.64;
+        railMat.normalScale.set(0.55, 0.55);
+        railMat.roughness = 0.62;
         railMat.metalness = 0;
-        railMat.clearcoat = 0.42;
-        railMat.clearcoatRoughness = 0.36;
+        railMat.clearcoat = 0.46;
+        railMat.clearcoatRoughness = 0.34;
         railMat.sheen = 0;
         railUniforms.uStitchOn.value = 1;
         railUniforms.uGrainScale.value = 34;
-        railUniforms.uPolish.value = 0.7;
+        railUniforms.uPolish.value = 0.72;
         railMat.normalMap.repeat.set(22, 3);
         railMat.roughnessMap.repeat.set(22, 3);
         break;
@@ -894,10 +1013,12 @@ export function createTable(env: THREE.Texture | null): TableHandle {
       quality = tier;
       const low = tier === 'low';
       feltMat.sheen = low ? 0 : 0.85;
-      railMat.clearcoat = low ? 0 : skin.railMaterial === 'wood' ? 0.95 : 0.42;
+      feltMat.sheenRoughness = 0.6;
+      railMat.clearcoat = low ? 0 : skin.railMaterial === 'wood' ? 0.95 : 0.46;
       trimMat.anisotropy = low ? 0 : (TRIM_METALS[skin.trimMetal] ?? TRIM_METALS.gold).aniso;
       contact.visible = tier !== 'low';
-      feltUniforms.uWear.value = low ? 0.08 : 0.16;
+      feltUniforms.uWear.value = low ? 0.08 : 0.17;
+      feltUniforms.uFiberScale.value = low ? 54 : 84;
       feltMat.needsUpdate = true;
       railMat.needsUpdate = true;
       trimMat.needsUpdate = true;

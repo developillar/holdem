@@ -39,10 +39,33 @@ export interface LightRig {
   dispose(): void;
 }
 
-const KEY_BASE = new THREE.Vector3(0.16, 2.14, 0.44);
-const KEY_TARGET = new THREE.Vector3(0, 0, -0.05);
-const KEY_INTENSITY = 19.5;
-const POOL_RADIUS = 1.82;
+/**
+ * The lamp hangs slightly to the camera's side of centre and slightly short
+ * of the far rail. That off-axis placement is what puts a readable highlight
+ * on the near rail's crest and lets the far end fall away — a lamp on the
+ * exact centre line lights an oval evenly and the table goes flat.
+ */
+const KEY_BASE = new THREE.Vector3(0.12, 2.3, 0.34);
+const KEY_TARGET = new THREE.Vector3(0, 0, -0.14);
+const KEY_INTENSITY = 30;
+
+/**
+ * Two radii, and the difference matters.
+ *
+ * `CONE_RADIUS` is the spot's own geometry. It has to clear the *whole*
+ * table — a 3 m oval under a 2.3 m lamp needs a wide cone — because a spot
+ * boundary that lands on the felt is a hard black line no penumbra can
+ * hide, and it is exactly what put the hero's own rail in the dark.
+ *
+ * `POOL_RADIUS` is the falloff the player actually sees: an albedo gradient
+ * in the felt shader, which reads at grazing angles where punctual falloff
+ * is invisible. The lamp covers everything; the *pool* is what makes the
+ * ends of the table sink away.
+ */
+const CONE_RADIUS = 2.2;
+const POOL_RADIUS = 1.34;
+/** How hard the felt darkens outside the pool. Reads as depth, not as fog. */
+const POOL_STRENGTH = 0.34;
 
 export function createLighting(): LightRig {
   const group = new THREE.Group();
@@ -51,14 +74,14 @@ export function createLighting(): LightRig {
   // ── key ────────────────────────────────────────────────────────────
   const key = new THREE.SpotLight(0xffd8ab, KEY_INTENSITY);
   key.position.copy(KEY_BASE);
-  key.angle = Math.atan(POOL_RADIUS / KEY_BASE.y) * 1.06;
-  key.penumbra = 0.78;
+  key.angle = Math.atan(CONE_RADIUS / KEY_BASE.y) * 1.04;
+  key.penumbra = 0.86;
   key.decay = 2;
-  key.distance = 9;
+  key.distance = 8.5;
   key.castShadow = true;
   key.shadow.mapSize.set(1024, 1024);
   key.shadow.camera.near = 1.05;
-  key.shadow.camera.far = 4.6;
+  key.shadow.camera.far = 4.2;
   key.shadow.bias = -0.0006;
   key.shadow.normalBias = 0.022;
   key.shadow.radius = 3;
@@ -68,35 +91,39 @@ export function createLighting(): LightRig {
   group.add(key.target);
 
   // ── rim ────────────────────────────────────────────────────────────
-  const rim = new THREE.DirectionalLight(0x8fb6ff, 0.6);
-  rim.position.set(-2.35, 1.55, -2.7);
-  rim.target.position.set(0, 0, 0.15);
+  // Key-opposite and low, so it grazes the far rail's roll and draws a cool
+  // edge between the leather and the black room behind it.
+  const rim = new THREE.DirectionalLight(0x9dc0ff, 0.66);
+  rim.position.set(-1.7, 1.45, -3.25);
+  rim.target.position.set(0.05, 0, 0.1);
   rim.castShadow = false;
   group.add(rim);
   group.add(rim.target);
 
   // ── fill ───────────────────────────────────────────────────────────
-  const hemi = new THREE.HemisphereLight(0x1d2a45, 0x06090a, 0.28);
+  // Ground colour is felt green, not grey: the only thing bouncing up into
+  // the underside of the rail on a real table is the cloth.
+  const hemi = new THREE.HemisphereLight(0x1d2a45, 0x0a1c14, 0.26);
   hemi.position.set(0, 2, 0);
   group.add(hemi);
 
   // near practical: warm bounce off the player's side of the rail
-  const nearGlow = new THREE.PointLight(0xffc98d, 0.42, 3.6, 2);
-  nearGlow.position.set(0, 0.78, 2.15);
+  const nearGlow = new THREE.PointLight(0xffc98d, 0.9, 4.2, 2);
+  nearGlow.position.set(0, 0.55, 2.2);
   group.add(nearGlow);
 
   // far practical: cool spill from the room behind the table
-  const farGlow = new THREE.PointLight(0x7aa6e0, 0.42, 3.2, 2);
-  farGlow.position.set(0, 0.48, -1.9);
+  const farGlow = new THREE.PointLight(0x7aa6e0, 0.46, 3.4, 2);
+  farGlow.position.set(0, 0.44, -2.25);
   group.add(farGlow);
 
   // ── volumetric haze band ───────────────────────────────────────────
-  // Only the last 60 cm of the shaft is drawn. The full cone would put a
+  // Only the last 70 cm of the shaft is drawn. The full cone would put a
   // hard-edged triangle across the whole upper frame.
   const shaftLen = KEY_BASE.distanceTo(KEY_TARGET);
-  const bandH = 0.62;
+  const bandH = 0.7;
   const bandTopR = POOL_RADIUS + (0.075 - POOL_RADIUS) * (bandH / shaftLen);
-  const coneGeo = new THREE.CylinderGeometry(bandTopR, POOL_RADIUS * 1.02, bandH, 44, 1, true);
+  const coneGeo = new THREE.CylinderGeometry(bandTopR, POOL_RADIUS * 1.05, bandH, 44, 1, true);
   coneGeo.translate(0, bandH / 2, 0);
   const coneUniforms = {
     uColor: { value: new THREE.Color(0xffd2a0) },
@@ -132,9 +159,9 @@ export function createLighting(): LightRig {
   const pool: LightPool = {
     x: KEY_TARGET.x,
     z: KEY_TARGET.z,
-    inner: 0.5,
-    outer: 1.95,
-    strength: 0.3,
+    inner: 0.52,
+    outer: 1.78,
+    strength: POOL_STRENGTH,
   };
 
   const baseKeyColor = new THREE.Color(0xffd8ab);
@@ -172,8 +199,8 @@ export function createLighting(): LightRig {
         KEY_BASE.z + 0.024 * Math.cos(elapsed * 0.137),
       );
 
-      rim.intensity = 0.6 * (1 + 0.05 * Math.sin(elapsed * 0.21 + 3.1));
-      nearGlow.intensity = 0.42 * (1 + 0.09 * Math.sin(elapsed * 0.43 + 1.1));
+      rim.intensity = 0.66 * (1 + 0.05 * Math.sin(elapsed * 0.21 + 3.1));
+      nearGlow.intensity = 0.9 * (1 + 0.09 * Math.sin(elapsed * 0.43 + 1.1));
 
       tmpColor.copy(baseKeyColor).lerp(accentColor, accentAmount);
       key.color.copy(tmpColor);
@@ -183,7 +210,7 @@ export function createLighting(): LightRig {
 
       if (tier !== 'low') placeCone();
 
-      pool.strength = 0.3 + pulseAmount * 0.18;
+      pool.strength = POOL_STRENGTH + pulseAmount * 0.18;
     },
 
     setQuality(next: PerfTier) {

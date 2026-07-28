@@ -92,17 +92,12 @@ export interface LobbyInstance {
 }
 
 export function mount(container: HTMLElement): LobbyInstance {
-  // The lobby is an off-table route, and base.css is explicit that the felt
-  // must not bleed through one. The shell's own stage toggle early-outs on the
-  // boot path (it is asked to hide a canvas it already believes is hidden), so
-  // the class never lands and the table composites straight up through the
-  // middle of this screen. Claim it here, synchronously, before the first
-  // paint of the screen rather than on a transition end — `.is-hidden` also
-  // carries `visibility: hidden` now, so there is no frame in which a
-  // half-faded felt can leak. Deliberately not undone on unmount: the shell
-  // clears it when the table route opens, and dropping it early would show a
-  // frame of felt during the outgoing transition.
-  document.getElementById('stage')?.classList.add('is-hidden');
+  // Nothing to do about the 3D stage here. The renderer owns whether the felt
+  // is on screen (`renderer.setVisible()`), it starts hidden, and the boot
+  // spine re-asserts that off the router's settled route — including on the
+  // navigation that mounts this screen. Reaching over and setting the class
+  // from a screen is what used to leave the table dark: two writers, and the
+  // one that ran last was whichever screen happened to mount last.
 
   const root = h('div', { class: 'lb scroll' });
   const aura = h('div', { class: 'lb__aura', 'aria-hidden': 'true' });

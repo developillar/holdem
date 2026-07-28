@@ -39,6 +39,8 @@ body {
   isolation: isolate;
 }
 
+/* The WebGL stage. `src/render/renderer.ts` is the only thing that writes
+   `.is-hidden` on it — visibility is renderer state, not screen state. */
 #stage {
   position: absolute;
   inset: 0;
@@ -48,13 +50,22 @@ body {
   z-index: var(--z-stage);
   touch-action: none;
   opacity: 1;
-  transition: opacity var(--d-slow) var(--ease-out);
+  visibility: visible;
+  /* Coming in, the felt has to be painting on the first frame of the route
+     zoom, so visibility flips with no delay and the opacity ramp is short. */
+  transition: opacity var(--d-base) var(--ease-out), visibility 0s linear 0s;
 }
 
-/* Off-table routes own their own background; the felt must not bleed through. */
+/* Off-table routes own their own background; the felt must not bleed through.
+   Opacity alone is not enough — a canvas at `opacity: 0` is still composited
+   every frame, which is the one cost this class exists to remove. `visibility`
+   is held until the fade has finished so the exit is still a cross-fade and
+   not a cut. */
 #stage.is-hidden {
   opacity: 0;
+  visibility: hidden;
   pointer-events: none;
+  transition: opacity var(--d-slow) var(--ease-out), visibility 0s linear var(--d-slow);
 }
 
 #ui-root {

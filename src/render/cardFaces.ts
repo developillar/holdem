@@ -2,8 +2,15 @@
  * Procedural playing-card art.
  *
  * Every one of the 52 faces is drawn with canvas2d into a single texture
- * atlas (13 rank columns × 4 suit rows) at retina density, plus a set of
- * standalone card-back textures used for cosmetics. Nothing is downloaded.
+ * atlas (13 rank columns × 4 suit rows), plus a set of standalone card-back
+ * textures used for cosmetics. Nothing is downloaded.
+ *
+ * The cell is sized from the largest a printed face is ever *shown* on this
+ * device — measured, not assumed — and capped by a single-texture budget of
+ * 2048 px. See the atlas-geometry block below for both numbers and where they
+ * came from. Trilinear mipping, linear magnification, the GPU's full
+ * anisotropic ceiling and sRGB on the way in; a rank glyph that stair-steps is
+ * the most expensive defect this file can ship.
  *
  * Art direction
  * ─────────────
@@ -28,6 +35,7 @@
  */
 import * as THREE from 'three';
 import type { CardId, Suit } from '../core/types.ts';
+import { getStageHandle } from './renderer.ts';
 
 // ─────────────────────────── palette ───────────────────────────
 
@@ -106,6 +114,67 @@ const ROWS = 4;
 /** Base cell at scale 1. 63:88 to two decimals, which is a real card. */
 const BASE_CELL_W = 232;
 const BASE_CELL_H = 324;
+/** 88/63 — the aspect every cell is locked to, whatever its width. */
+const CARD_AR = BASE_CELL_H / BASE_CELL_W;
+
+/**
+ * Atlas budget, and the sizing rule.
+ *
+ * `cards.ts` clones one shared `THREE.Texture` per slab and drives each card
+ * with a UV rect, so this has to stay a *single* canvas — splitting the deck
+ * across four textures would break that contract and cost 30 extra uploads.
+ * Which makes the width the binding constraint: 13 columns inside a 2048 px
+ * mobile-safe texture is 156 px of cell.
+ *
+ * How big a cell actually needs to be was measured, not guessed. Driving a
+ * live 6-max hand at 393×852 and projecting every atlas-mapped mesh through
+ * the camera each frame for 45 s, the largest a printed face ever reached on
+ * screen was **53.2 × 75.3 CSS px** (peak of 181 samples — an opponent's hole
+ * card as it peels toward the rail). Scaled to the widest supported phone
+ * (430 pt → 58 CSS px) at the renderer's highest device-pixel ceiling, that is
+ * ~146 device px of card. 156 covers it, so the print is sampled at or above
+ * 1:1 everywhere it is ever shown, and the mip chain — not the magnifier —
+ * does the work the rest of the time.
+ *
+ * The ceiling is only reached on a 3× phone. 2028 × 864 RGBA is 6.7 MB, 8.9 MB
+ * once mipped — less than the 232 px cell this module used to default to
+ * (3016 × 1296 → 15.6 MB, 20.8 MB mipped) and a third fewer pixels to paint,
+ * so it is cheaper to build as well as sharper to read. A 2× device asks for
+ * ~107 px of cell and gets an atlas under 4 MB.
+ */
+const MAX_ATLAS_PX = 2048;
+/** Rounded down to even so the widest atlas is 2028 px, not 2054. */
+const MAX_CELL_W = Math.floor(MAX_ATLAS_PX / COLS / 2) * 2;
+/** Below this a rank stops surviving the mip chain, whatever the tier says. */
+const MIN_CELL_W = 112;
+/** Measured: 53.2 CSS px of card per 393 px of viewport short edge. */
+const CARD_PER_VIEWPORT = 53.2 / 393;
+
+/** The cell width this device actually needs, in texels. */
+function neededCellPx(): number {
+  const w = window.innerWidth || 393;
+  const h = window.innerHeight || 852;
+  const short = Math.max(320, Math.min(w, h));
+  // The renderer caps its own drawing-buffer ratio at 2.5 on the top tier; a
+  // 3× phone therefore never rasterises a card above `short * ratio` device
+  // pixels, and asking the atlas for more than that is memory nobody sees.
+  const ratio = Math.min(window.devicePixelRatio || 1, 3);
+  return Math.ceil(short * CARD_PER_VIEWPORT * ratio);
+}
+
+/**
+ * Anisotropic ceiling for the atlas.
+ *
+ * three clamps `texture.anisotropy` to `capabilities.getMaxAnisotropy()` at
+ * upload time, so the stage's own number is read when it exists and 16 — the
+ * ceiling on every GPU that reports one at all — stands in before it does.
+ * A card lies almost edge-on to this camera; without this the print smears
+ * along the felt exactly where a player is trying to read it.
+ */
+function maxAnisotropy(): number {
+  const n = getStageHandle()?.renderer.capabilities.getMaxAnisotropy();
+  return Number.isFinite(n) && (n as number) >= 1 ? (n as number) : 16;
+}
 
 export type CardBackId =
   | 'royale-gold'
@@ -1049,7 +1118,12 @@ export interface AtlasUV {
 }
 
 export interface CardFaceAtlas {
-  /** the 13×4 face atlas; clone it per card and apply a UV rect */
+  /**
+   * The 13×4 face atlas; clone it per card and apply a UV rect. Filtering,
+   * mipmaps, anisotropy and colour space are already set — clone, do not
+   * re-configure, because a clone shares this texture's source and every
+   * sampler state it was cloned with.
+   */
   texture: THREE.Texture;
   /** resolves once every suit row has been painted */
   ready: Promise<void>;
@@ -1076,12 +1150,13 @@ class Atlas implements CardFaceAtlas {
   private pending: number[] = [0, 1, 2, 3];
   private timer = 0;
   private resolve!: () => void;
-  private backScale: number;
 
-  constructor(scale: number, aniso: number) {
-    this.cellW = Math.round(BASE_CELL_W * scale);
-    this.cellH = Math.round(BASE_CELL_H * scale);
-    this.backScale = scale;
+  constructor(cellW: number, aniso: number) {
+    // Even dimensions, always rounded *down*: the mip chain halves cleanly for
+    // two more levels, an odd cell would put the UV seam on a half texel at
+    // every reduction, and rounding up would walk the atlas past its budget.
+    this.cellW = Math.max(2, Math.floor(cellW / 2) * 2);
+    this.cellH = Math.floor((this.cellW * CARD_AR) / 2) * 2;
     this.canvas = makeCanvas(this.cellW * COLS, this.cellH * ROWS);
     this.g = ctx2d(this.canvas);
     this.g.fillStyle = PAPER_TOP;
@@ -1091,6 +1166,9 @@ class Atlas implements CardFaceAtlas {
     this.texture.colorSpace = THREE.SRGBColorSpace;
     this.texture.wrapS = THREE.ClampToEdgeWrapping;
     this.texture.wrapT = THREE.ClampToEdgeWrapping;
+    // Trilinear down, bilinear up, anisotropic across: a card on this felt is
+    // both minified (lying flat at the far rail) and raked hard away from the
+    // camera, and it takes all three to keep a rank glyph from breaking up.
     this.texture.minFilter = THREE.LinearMipmapLinearFilter;
     this.texture.magFilter = THREE.LinearFilter;
     this.texture.generateMipmaps = true;
@@ -1164,8 +1242,8 @@ class Atlas implements CardFaceAtlas {
     const hit = this.backs.get(id);
     if (hit) return hit;
     const def = CARD_BACKS.find((b) => b.id === id) ?? CARD_BACKS[0];
-    const w = Math.round(BASE_CELL_W * this.backScale);
-    const h = Math.round(BASE_CELL_H * this.backScale);
+    const w = this.cellW;
+    const h = this.cellH;
     const c = makeCanvas(w, h);
     const g = ctx2d(c);
     paintBack(g, w, h, def);
@@ -1175,6 +1253,7 @@ class Atlas implements CardFaceAtlas {
     t.wrapT = THREE.ClampToEdgeWrapping;
     t.minFilter = THREE.LinearMipmapLinearFilter;
     t.magFilter = THREE.LinearFilter;
+    t.generateMipmaps = true;
     t.anisotropy = this.texture.anisotropy;
     t.needsUpdate = true;
     this.backs.set(id, t);
@@ -1194,23 +1273,45 @@ class Atlas implements CardFaceAtlas {
 let singleton: Atlas | null = null;
 
 export interface CardFaceOptions {
-  /** 1 = full retina atlas (~3016×1296), 0.5 = low tier */
+  /**
+   * Cell size as a multiple of the 232 px reference cell — a *floor*, not a
+   * ceiling. The atlas never goes below what this device's own screen shows
+   * (see `neededCellPx`), because a caller trading resolution for paint time
+   * cannot know how large a card ends up on the felt; it only knows how much
+   * budget it has. Ask for more than the screen needs and you get it, up to
+   * the 2048 px single-texture budget.
+   */
   scale?: number;
+  /**
+   * A floor, again. The default *is* the stage's anisotropic ceiling, which is
+   * what card print wants — the sampler cost is a rounding error next to a
+   * rank that smears the moment the card lies down.
+   */
   anisotropy?: number;
+}
+
+/** Resolves the requested and the required cell size into one texel width. */
+function resolveCellW(scale: number | undefined): number {
+  const asked = scale !== undefined ? BASE_CELL_W * THREE.MathUtils.clamp(scale, 0.35, 1.25) : 0;
+  return THREE.MathUtils.clamp(
+    Math.max(asked, neededCellPx()),
+    MIN_CELL_W,
+    MAX_CELL_W,
+  );
 }
 
 export function initCardFaces(opts: CardFaceOptions = {}): CardFaceAtlas {
   singleton?.dispose();
   singleton = new Atlas(
-    THREE.MathUtils.clamp(opts.scale ?? 1, 0.35, 1.25),
-    Math.max(1, Math.round(opts.anisotropy ?? 4)),
+    resolveCellW(opts.scale),
+    Math.max(1, Math.round(opts.anisotropy ?? 0), maxAnisotropy()),
   );
   return singleton;
 }
 
 /** Shared atlas. Builds a default one on first touch. */
 export function cardFaces(): CardFaceAtlas {
-  if (!singleton) singleton = new Atlas(1, 4);
+  if (!singleton) singleton = new Atlas(resolveCellW(undefined), maxAnisotropy());
   return singleton;
 }
 

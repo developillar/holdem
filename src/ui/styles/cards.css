@@ -36,6 +36,27 @@
   pointer-events: none;
 }
 
+/**
+ * The safe-area ruler.
+ *
+ * `--safe-t` / `--safe-b` resolve to `env(safe-area-inset-*)`, and a custom
+ * property's computed value is the *token*, not the resolved length — reading
+ * it back gives you the string `env(safe-area-inset-bottom, 0px)`, which parses
+ * to NaN and silently becomes zero. So the layout pass measures the insets off
+ * a real box whose padding is those tokens, where the standard-property
+ * computed style resolves them to pixels.
+ */
+.rcards__ruler {
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  width: 0;
+  height: 0;
+  padding: var(--safe-t) 0 var(--safe-b);
+  visibility: hidden;
+  pointer-events: none;
+}
+
 /* ═══════════════════════════════════════════════════════════════
    THE CARD
    Width is the only input: everything else is a ratio of it, so the
@@ -47,7 +68,6 @@
   position: absolute;
   inset: 0;
   display: block;
-  perspective: 900px;
   color: var(--c-suit-s);
 }
 
@@ -56,15 +76,51 @@
 .rc[data-suit='2'] { color: var(--c-suit-h); }
 .rc[data-suit='3'] { color: var(--c-suit-s); }
 
+/**
+ * The turn, and why the card is only 3D while it is turning.
+ *
+ * A card that keeps `preserve-3d` + `backface-visibility: hidden` standing is
+ * a 3D rendering context, and a 3D rendering context nested inside the hand's
+ * `perspective()` tilt makes Chromium give up on working out a screen-space
+ * raster scale for the subtree: it rasterises the whole card at one texture
+ * pixel per CSS pixel and lets the compositor magnify it to the device's 3×.
+ * The result is a rank glyph with visible stair-steps — measured at a 3–4
+ * device-pixel edge ramp where crisp text ramps in 1.
+ *
+ * So the 3D exists for exactly as long as the flip does. At rest the card is a
+ * flat, untransformed element showing one of its two sides, which is the state
+ * the compositor rasterises at the panel's real density; `herocards.ts` adds
+ * `is-flip` for the duration of the turn and takes it off again on the last
+ * frame. Nobody has ever read a rank mid-flip.
+ */
 .rc__flip {
   position: absolute;
   inset: 0;
+}
+
+.rc:not(.is-up) .rc__face,
+.rc.is-up .rc__back {
+  visibility: hidden;
+}
+
+.rc.is-flip {
+  perspective: 900px;
+}
+
+.rc.is-flip .rc__flip {
   transform-style: preserve-3d;
   transform: rotateY(180deg);
 }
 
-.rc.is-up .rc__flip {
+.rc.is-flip.is-up .rc__flip {
   transform: rotateY(0deg);
+}
+
+.rc.is-flip .rc__face,
+.rc.is-flip .rc__back {
+  visibility: visible;
+  backface-visibility: hidden;
+  -webkit-backface-visibility: hidden;
 }
 
 .rc__face,
@@ -73,8 +129,6 @@
   inset: 0;
   border-radius: var(--rc-r);
   overflow: hidden;
-  backface-visibility: hidden;
-  -webkit-backface-visibility: hidden;
 }
 
 /* ── the printed face ───────────────────────────────────────── */
@@ -155,11 +209,14 @@
 /* ── the back ───────────────────────────────────────────────── */
 
 .rc__back {
-  transform: rotateY(180deg);
   background: linear-gradient(164deg, var(--rc-back-hi) 0%, var(--rc-back-mid) 52%, var(--rc-back-lo) 100%);
   box-shadow:
     inset 0 0 0 0.5px var(--line-gold),
     inset 0 1px 0 rgba(255, 255, 255, 0.09);
+}
+
+.rc.is-flip .rc__back {
+  transform: rotateY(180deg);
 }
 
 .rc__weave {
@@ -227,30 +284,53 @@
   height: calc(var(--rc-w) * 1.4);
 }
 
-/* Empty slot: a recessed well, not a dashed ghost card. It reads as a place
-   a card is going to arrive, which is what makes the street legible. */
+/**
+ * The empty slot — an inlay cut into the felt, not a placeholder box.
+ *
+ * A dashed rectangle is a wireframe: it announces that something is missing
+ * and asks the player to imagine the finished screen. A real table has no
+ * missing anything, so the five slots are a shallow rebate routed into the
+ * cloth — the felt's own colour, one shade deeper, with a hard shadow under
+ * the top lip and a single lit hairline along the bottom where the key light
+ * would actually catch the edge of the cut. It reads as furniture at a glance
+ * and as *five of them* at half a glance, which is how the street stays
+ * legible with nothing on the board at all.
+ */
 .rboard__well {
   position: absolute;
   inset: 0;
   border-radius: var(--rc-r);
-  background: linear-gradient(180deg, rgba(2, 10, 7, 0.62), rgba(2, 10, 7, 0.3));
+  background:
+    radial-gradient(112% 78% at 50% 4%, rgba(2, 11, 7, 0.62) 0%, rgba(3, 15, 10, 0.3) 58%, rgba(4, 20, 13, 0.14) 100%),
+    linear-gradient(180deg, rgba(2, 11, 7, 0.42) 0%, rgba(5, 22, 14, 0.16) 72%, rgba(8, 30, 19, 0.1) 100%);
   box-shadow:
-    inset 0 2px 4px rgba(0, 0, 0, 0.65),
-    inset 0 0 0 1px rgba(255, 255, 255, 0.07),
-    0 1px 0 rgba(255, 255, 255, 0.08);
-  transition: opacity var(--d-fast) var(--ease-out);
+    inset 0 calc(var(--rc-w) * 0.045) calc(var(--rc-w) * 0.07) rgba(0, 0, 0, 0.5),
+    inset 0 1px 1px rgba(0, 0, 0, 0.62),
+    inset 0 -1px 0 rgba(214, 236, 222, 0.09),
+    inset 0 0 0 1px rgba(0, 0, 0, 0.22),
+    0 1px 0 rgba(224, 244, 232, 0.055);
+  transition:
+    opacity var(--d-fast) var(--ease-out),
+    transform var(--d-fast) var(--ease-out);
 }
 
+/* The seat of the rebate: a breath of gold where the cut floor meets the
+   light. One hairline, 22% opaque, no border — the only ornament an empty
+   slot gets, and the thing that makes the row read as inlaid rather than
+   scuffed. */
 .rboard__well::after {
   content: '';
   position: absolute;
-  inset: calc(var(--rc-w) * 0.11);
-  border-radius: calc(var(--rc-r) * 0.62);
-  border: 1px dashed rgba(237, 201, 107, 0.16);
+  inset: auto 26% calc(var(--rc-w) * 0.16) 26%;
+  height: 1px;
+  border-radius: var(--r-pill);
+  background: linear-gradient(90deg, transparent, rgba(237, 201, 107, 0.22), transparent);
 }
 
+/* Filled: the inlay closes under the card rather than blinking out. */
 .rboard__slot.is-on .rboard__well {
   opacity: 0;
+  transform: scale(0.94);
 }
 
 .rboard__fly {
@@ -282,6 +362,36 @@
 
 .rboard__slot.is-pop .rboard__fly {
   animation: rbPop var(--d-base) var(--ease-spring) 1;
+}
+
+/**
+ * Touchdown.
+ *
+ * `flyIn` owns the transform on `.rboard__fly` for the whole flight, so the
+ * impact is played one level in, on the card itself: it arrives a little
+ * stretched along its travel, compresses against the felt, and settles. Card
+ * stock has almost no give, so the whole beat is 4% and 260 ms — enough to
+ * read as weight, not enough to read as jelly. The well deepens for a frame
+ * under the card as it seats, which is what sells the slot as a real recess.
+ */
+.rboard__slot.is-land .rc {
+  animation: rbLand 260ms var(--ease-out) 1;
+}
+
+.rboard__slot.is-land .rboard__well {
+  animation: rbSeat 200ms var(--ease-out) 1;
+}
+
+@keyframes rbLand {
+  0% { transform: translateY(-4%) scale(0.975, 1.05); }
+  46% { transform: translateY(0) scale(1.035, 0.945); }
+  100% { transform: none; }
+}
+
+@keyframes rbSeat {
+  0% { opacity: 1; transform: scale(1); }
+  30% { opacity: 0.9; transform: scale(0.99); }
+  100% { opacity: 0; transform: scale(0.94); }
 }
 
 @keyframes rbBloom {
@@ -318,13 +428,15 @@
   }
 }
 
+/* The silent fill — a state snapshot that ran ahead of its deal event. It
+   still arrives from above and still seats, just without the flight. */
 @keyframes rbPop {
   0% {
-    transform: scale(0.86);
+    transform: translateY(-8%) scale(0.88);
     opacity: 0;
   }
   100% {
-    transform: scale(1);
+    transform: none;
     opacity: 1;
   }
 }
@@ -352,13 +464,16 @@
    ═══════════════════════════════════════════════════════════════ */
 
 /**
- * Hand width. The ceiling is set by the gap between the hero's own nameplate
- * and the top of the action bar — about 110 px on a 393×852 phone. Anything
- * larger and the hand climbs over its own stack readout, which trades one
- * unreadable thing for another.
+ * Hand width. The ceiling is the gap between the hero's own nameplate and the
+ * top of the hero zone — about 245 px on a 393×852 phone, of which the hand
+ * takes half. `board.ts` parks the hand clear of the zone in every state it
+ * can reach, so the width can be set by legibility rather than by the tallest
+ * thing that might appear underneath it: at 22.4vw the rank glyph is 44 px of
+ * type on a 393 pt screen, which is the size it has to be for the two cards a
+ * player looks at more often than anything else in the app.
  */
 .rhero {
-  --rh-w: clamp(68px, 20.4vw, 92px);
+  --rh-w: clamp(72px, 22.4vw, 96px);
   --sq: 0;
   --n: 2;
   --fan-x: 0.6;
@@ -376,7 +491,14 @@
   pointer-events: auto;
   touch-action: none;
   opacity: 0;
-  transition: opacity var(--d-base) var(--ease-out);
+  /* The park height ratchets — once, maybe twice a session, as the hero zone
+     reaches a taller state than it has before. Gliding those few pixels reads
+     as the hand making room for the controls coming up; snapping them reads as
+     a bug. `board.ts` only writes this transform when it actually changes, so
+     the transition has nothing to chase in the steady state. */
+  transition:
+    opacity var(--d-base) var(--ease-out),
+    transform var(--d-slow) var(--ease-out);
 }
 
 .rhero.is-live {
@@ -439,14 +561,18 @@
     0 calc(var(--rc-w) * 0.24) calc(var(--rc-w) * 0.5) rgba(3, 5, 10, 0.6);
 }
 
-/* Folding: the hand skates down out of frame. */
+/* Folding: the hand skates down out of frame, and flattens toward the felt as
+   it goes. The skate lives on the deck, not on `.rhero` — JS owns `.rhero`'s
+   transform for the parking pass, and an inline style beats a class rule, so
+   a muck written up here would simply never play. */
 .rhero.is-mucked {
   opacity: 0;
-  transform: translate3d(-50%, calc(var(--rh-w) * 0.55), 0);
-  transition:
-    opacity var(--d-base) var(--ease-out),
-    transform var(--d-slow) var(--ease-in-out);
   pointer-events: none;
+}
+
+.rhero.is-mucked .rhero__deck {
+  transform: perspective(760px) rotateX(3deg) translate3d(0, calc(var(--rh-w) * 0.55), 0);
+  transition: transform var(--d-slow) var(--ease-in-out);
 }
 
 .rhero.is-showdown .rc.is-win .rc__face {
@@ -469,7 +595,18 @@
     --rb-gap: calc(var(--rb-w) * 0.08);
   }
   .rhero {
-    --rh-w: 70px;
+    --rh-w: 74px;
+  }
+}
+
+/* Short phones (360×640 and friends): the felt, the pot and the hero zone all
+   want the same 640 px, and the hand is the one that can give. */
+@media (max-height: 700px) {
+  .rboard {
+    --rb-w: clamp(40px, 12.4vw, 52px);
+  }
+  .rhero {
+    --rh-w: clamp(64px, 19vw, 78px);
   }
 }
 
@@ -477,6 +614,8 @@
   .rboard__slot.is-bloom .rboard__fly,
   .rboard__slot.is-drama.is-bloom .rboard__fly,
   .rboard__slot.is-pop .rboard__fly,
+  .rboard__slot.is-land .rc,
+  .rboard__slot.is-land .rboard__well,
   .rboard.is-showdown .rc.is-win {
     animation: none;
   }

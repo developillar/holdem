@@ -146,6 +146,17 @@ class Card implements CardEl {
     this.el.setAttribute('aria-label', `${label} of ${SUIT_NAME[suit]}`);
   }
 
+  /**
+   * Turns the card.
+   *
+   * `is-flip` is what puts the card into 3D — see the note over `.rc__flip` in
+   * cards.css. It goes on for the duration of the turn and comes off on the
+   * last frame, because a card left in a 3D rendering context is rasterised at
+   * a third of this screen's density and its rank stops being crisp. The class
+   * is dropped on cancel too: an interrupted turn must not strand the card in
+   * the soft state, which is the whole reason this is a class and not a
+   * one-way stylesheet rule.
+   */
   setFaceUp(up: boolean, ms = 300, delayMs = 0): void {
     this.anim?.cancel();
     this.anim = null;
@@ -153,9 +164,13 @@ class Card implements CardEl {
     this.faceUp = up;
     this.el.classList.toggle('is-up', up);
     const dur = motionMs(ms);
-    if (!changed || dur <= 1) return;
+    if (!changed || dur <= 1) {
+      this.el.classList.remove('is-flip');
+      return;
+    }
     const from = up ? 'rotateY(180deg)' : 'rotateY(0deg)';
     const to = up ? 'rotateY(0deg)' : 'rotateY(180deg)';
+    this.el.classList.add('is-flip');
     this.anim = this.flip.animate(
       [
         { transform: from, offset: 0 },
@@ -166,7 +181,14 @@ class Card implements CardEl {
       ],
       { duration: dur, delay: motionMs(delayMs), easing: EASE_SNAP, fill: 'backwards' },
     );
-    this.anim.addEventListener('finish', () => (this.anim = null), { once: true });
+    this.anim.addEventListener(
+      'finish',
+      () => {
+        this.anim = null;
+        this.el.classList.remove('is-flip');
+      },
+      { once: true },
+    );
   }
 
   setWin(on: boolean): void {
@@ -180,6 +202,7 @@ class Card implements CardEl {
   cancel(): void {
     this.anim?.cancel();
     this.anim = null;
+    this.el.classList.remove('is-flip');
   }
 }
 
@@ -262,8 +285,20 @@ export interface HeroHand {
   clear(): void;
   /** Gold rim on the cards that make the winning hand; null clears it. */
   highlight(cards: readonly CardId[] | null): void;
-  /** Sets the gap, in CSS px, between the hand's bottom edge and the viewport. */
-  place(gap: number): void;
+  /**
+   * Parks the hand so its lowest *painted* pixel sits `clearance` CSS px above
+   * the bottom of the viewport. Not the border box — the fan splays past it,
+   * and the difference is the number that decides whether the player's own
+   * cards get sliced off by the bar underneath them.
+   */
+  place(clearance: number): void;
+  /**
+   * Re-reads the fan's overhang from the live layout. Called on the host's
+   * measure cadence; it is a layout read, so never call it per frame.
+   */
+  measure(): void;
+  /** The hand's full painted height, in CSS px — box plus fan overhang. */
+  readonly paintedHeight: number;
   dispose(): void;
 }
 
@@ -287,6 +322,7 @@ class Hero implements HeroHand {
   private startY = 0;
   private raf = 0;
   private gap = -1;
+  private drop = 0;
 
   constructor(opts: HeroHandOpts) {
     this.origin = opts.origin ?? (() => ({ x: window.innerWidth / 2, y: window.innerHeight * 0.2 }));
@@ -336,11 +372,53 @@ class Hero implements HeroHand {
     }
   }
 
-  place(gap: number): void {
-    const g = Math.round(gap * 2) / 2;
+  place(clearance: number): void {
+    const g = Math.round(clearance * 2) / 2;
     if (g === this.gap) return;
     this.gap = g;
-    this.el.style.transform = `translate3d(-50%, ${(-g).toFixed(1)}px, 0)`;
+    this.write();
+  }
+
+  private write(): void {
+    if (this.gap < 0) return;
+    this.el.style.transform = `translate3d(-50%, ${(-(this.gap + this.drop)).toFixed(1)}px, 0)`;
+  }
+
+  /**
+   * The fan's overhang, measured rather than derived.
+   *
+   * `.rhero` is exactly one card tall, but the slots are nudged down by a
+   * fraction of a card and then rotated about a point below their own bottom
+   * edge, so the ink reaches a few pixels past the border box — 5.2 px on a
+   * 393 pt screen with two cards, more with four. That number is a pure
+   * consequence of `--fan-x`, `--fan-rot` and the slot's transform origin, all
+   * of which live in CSS and are meant to be tuned there, so it is read off
+   * the live layout instead of being re-derived here every time somebody
+   * retunes the fan.
+   *
+   * Only ever measured at rest: a card mid-flight is 200 px from where it will
+   * land, and a squeeze in progress is lifting the whole hand.
+   */
+  measure(): void {
+    if (this.dragging || this.raf !== 0 || this.held.length === 0) return;
+    for (const a of this.anims) if (a && a.playState === 'running') return;
+    const base = this.el.getBoundingClientRect();
+    if (base.height <= 0) return;
+    let low = base.bottom;
+    for (let i = 0; i < this.held.length; i++) {
+      const r = this.slots[i].getBoundingClientRect();
+      if (r.height > 0 && r.bottom > low) low = r.bottom;
+    }
+    // Capped at a quarter card: a bad read must never be able to shove the
+    // hand off the top of the felt.
+    const next = clamp(low - base.bottom, 0, base.height * 0.25);
+    if (Math.abs(next - this.drop) < 0.5) return;
+    this.drop = next;
+    this.write();
+  }
+
+  get paintedHeight(): number {
+    return (this.el.offsetHeight || 0) + this.drop;
   }
 
   // ── content ─────────────────────────────────────────────────────

@@ -21,10 +21,23 @@
  * one in flight and resolves its promise, so a fast-forwarding player never
  * strands an object mid-air. All scheduling runs off the render clock through
  * the local `Sched`, never `setTimeout`, so it pauses when the tab does.
+ *
+ * ── Who may see a card ─────────────────────────────────────────────────────
+ * Exactly one field decides it: `SeatState.revealed`. Not the presence of hole
+ * cards in an event, not the `faceUp` flag on `hand:deal-hole`, not whether a
+ * seat happens to be in the hand. The drivers hand this module every card at
+ * the table because the showdown has to be able to turn them over; none of it
+ * is visible until the flag says the local client may see it, and the flag is
+ * revoked on every `hand:start` and on every muck. The hero's own hand is the
+ * one exception, and it is the local client's hand by definition.
+ *
+ * `render/cards.ts` enforces the same rule a level down: an unrevealed card
+ * binds its BACK print to both sides of the slab, so a mistake here is a card
+ * that fails to appear, never a card that leaks.
  */
 import * as THREE from 'three';
 import { bus } from '../core/bus.ts';
-import type { CardId, Rarity, SeatState, TableState } from '../core/types.ts';
+import type { CardId, Rarity, SeatState, ShowdownResult, TableState } from '../core/types.ts';
 
 import {
   createCardPool,
@@ -277,6 +290,23 @@ class Dealing implements DealingSystem {
   private perHand = 2;
 
   private hole: CardHandle[][] = Array.from({ length: 9 }, () => []);
+  /**
+   * The visibility ledger, and the only thing on the felt allowed to turn a
+   * hand over.
+   *
+   *   `mayShow[seat]`  what SeatState.revealed last said about this seat. It
+   *                    is cleared on every `hand:start`, so a reveal can never
+   *                    survive into the hand after it.
+   *   `showing[seat]`  what the felt is actually doing, so a snapshot that
+   *                    repeats forty times a second does not re-flip a hand
+   *                    forty times.
+   *
+   * Card DATA arriving for a seat says nothing about either — the drivers hand
+   * this module every hole card at the table so the showdown has something to
+   * turn over, and none of it is visible until the flag says so.
+   */
+  private mayShow: boolean[] = new Array(9).fill(false);
+  private showing: boolean[] = new Array(9).fill(false);
   /** parallel arrays: the card, which board it belongs to, and its slot 0-4 */
   private board: CardHandle[] = [];
   private boardOwner: number[] = [];
@@ -426,7 +456,32 @@ class Dealing implements DealingSystem {
     }
   }
 
+  /**
+   * Applies a seat's `revealed` flag to the cards on the felt.
+   *
+   * This is the whole visibility rule, in one place, driven by one field.
+   * A folded, empty or sitting-out seat is never revealed no matter what the
+   * flag says — a hand that is out of play has nothing to table.
+   */
+  private applyReveal(seat: number, may: boolean): void {
+    // The hero's own hand is turned over by the peel, which owns its pose and
+    // its timing; re-flipping it from a snapshot would fight that animation.
+    if (seat === this.hero) return;
+    this.mayShow[seat] = may;
+    if (this.showing[seat] === may) return;
+    const list = this.hole[seat];
+    if (list.length === 0) {
+      this.showing[seat] = false;
+      return;
+    }
+    this.showing[seat] = may;
+    for (const h of list) void h.flip(T.showdownFlip, may);
+  }
+
   private syncSeat(s: SeatState): void {
+    const dead = s.status === 'folded' || s.status === 'empty' || s.status === 'sitting-out';
+    this.applyReveal(s.index, s.revealed && !dead);
+
     const p = s.player;
     if (!p || s.status === 'empty') {
       this.avatars.setSeat(s.index, { occupied: false });
@@ -498,6 +553,11 @@ class Dealing implements DealingSystem {
 
   private onHandStart(buttonSeat: number): void {
     this.sched.clear();
+    // Before anything else: revoke every reveal from the hand that just ended.
+    // The drivers deal before they publish the first snapshot of the new hand,
+    // so the newest `revealed` this module has seen is still last showdown's.
+    this.mayShow.fill(false);
+    this.showing.fill(false);
     this.clearCards();
     this.fades.length = 0;
     this.glows.length = 0;
@@ -538,6 +598,7 @@ class Dealing implements DealingSystem {
     for (let seat = 0; seat < 9; seat++) {
       for (const c of this.hole[seat]) c.release();
       this.hole[seat].length = 0;
+      this.showing[seat] = false;
     }
     for (const c of this.board) c.release();
     this.board.length = 0;
@@ -554,6 +615,7 @@ class Dealing implements DealingSystem {
     this.sched.clear(TAG_HERO);
     for (const c of this.hole[this.hero]) c.release();
     this.hole[this.hero].length = 0;
+    this.showing[this.hero] = false;
     for (const c of this.board) c.release();
     this.board.length = 0;
     this.boardOwner.length = 0;
@@ -604,6 +666,9 @@ class Dealing implements DealingSystem {
       const index = list.length;
       if (index >= 4) break;
       const h = this.cards.acquire();
+      // Data first, and the card stays hidden through it: `setFace()` loads
+      // the rank, `setFaceUp(false)` is the explicit instruction not to show
+      // it. Nothing here reveals, so nothing here can leak.
       h.setFace(card);
       h.setFaceUp(false);
       h.setRenderOrder(4 + index);
@@ -623,9 +688,14 @@ class Dealing implements DealingSystem {
       h.moveTo(this._p2, this._q2, {
         duration: T.dealFlight + dist * 0.055,
         ease: Ease.out,
+        // A pitched card spins in its own plane — the dealer's flick. It used
+        // to turn over about its long axis instead, which pointed the print at
+        // the camera for most of the flight and, because `Ease.out` puts the
+        // card at the seat by the time the spin peaks, showed every opponent's
+        // hand face-up at their seat on the way in.
         arc: T.dealArc + dist * 0.02,
-        // a hair over a half-turn about the long axis: the wrist flick
         spin: 0.62,
+        spinAxis: 'plane',
         bounce: 0.0055,
       });
 
@@ -633,7 +703,11 @@ class Dealing implements DealingSystem {
         // hero cards reveal as a group once the pass is done
         this.sched.clear(TAG_HERO);
         this.sched.after(T.heroPeelDelay, () => this.peelHero(), TAG_HERO);
-      } else if (faceUp) {
+      } else if (faceUp && this.mayShow[seat]) {
+        // A driver asking for a face-up deal is a REQUEST, never an authority:
+        // it is honoured only for a seat whose `revealed` flag already says
+        // this client is allowed to see the hand. Everything else turns over
+        // when — and only when — a snapshot or the showdown says so.
         this.sched.after(T.dealFlight + 0.1, () => void h.flip(T.showdownFlip, true), TAG_HAND);
       }
     }
@@ -722,6 +796,7 @@ class Dealing implements DealingSystem {
           ease: Ease.snap,
           arc: 0.05,
           spin: 0.35,
+          spinAxis: 'plane',
           bounce: 0.004,
         });
       },
@@ -774,7 +849,10 @@ class Dealing implements DealingSystem {
             duration: flight,
             ease: dramatic ? Ease.drop : Ease.out,
             arc: dramatic ? 0.16 : 0.1,
+            // in-plane too: a community card that flashed its rank in flight
+            // would spend the landing flip revealing something already seen
             spin: dramatic ? 0.85 : 0.55,
+            spinAxis: 'plane',
             bounce: 0.005,
             onDone: () => {
               void h.flip(flipDur, true);
@@ -915,6 +993,10 @@ class Dealing implements DealingSystem {
   // ─────────────────── muck & showdown ───────────────────
 
   private muckSeat(seat: number): void {
+    // A mucked hand is out of the hand: revoke first, so nothing that arrives
+    // later — a stale snapshot, a showdown result — can turn it back over.
+    this.mayShow[seat] = false;
+    this.showing[seat] = false;
     const list = this.hole[seat];
     if (list.length === 0) return;
     this.hole[seat] = [];
@@ -941,6 +1023,7 @@ class Dealing implements DealingSystem {
         ease: Ease.snap,
         arc: 0.045,
         spin: 0.5,
+        spinAxis: 'plane',
       });
       this.fades.push({
         card: h,
@@ -954,16 +1037,24 @@ class Dealing implements DealingSystem {
     this.pile.push(...list);
   }
 
-  private onShowdown(results: Array<{ seat: number; mucked: boolean; won: number }>): void {
+  private onShowdown(results: readonly ShowdownResult[]): void {
     let delay = 0;
     for (const r of results) {
+      // A hand that was mucked is never turned over, and neither is one whose
+      // seat has already folded out of the hand — `muckSeat` revoked those.
       if (r.mucked) continue;
+      const folded = this.lastState?.seats?.[r.seat]?.status === 'folded';
+      if (folded) continue;
       // The hero's showdown is the readable layer's — gold rim included.
       if (r.seat === this.hero && readableCards()) continue;
       const list = this.hole[r.seat];
       if (list.length === 0) continue;
       const seat = r.seat;
       const winner = r.won > 0;
+      // Only the five cards that actually make the hand take the gold rim.
+      const best = winner && r.rank ? r.rank.best : null;
+      this.mayShow[seat] = true;
+      this.showing[seat] = true;
       const a = this.anchors(seat);
       const tan = this.tangentOf(seat).clone();
       list.forEach((h, i) => {
@@ -981,6 +1072,8 @@ class Dealing implements DealingSystem {
           delay + i * 0.07,
           () => {
             h.setRenderOrder(8);
+            // the one place on the felt that is allowed to show a face, and
+            // it says so out loud
             void h.flip(T.showdownFlip, true);
             void h.moveTo(pos, quat, {
               duration: T.showdownFlip + 0.1,
@@ -988,7 +1081,8 @@ class Dealing implements DealingSystem {
               arc: 0.05,
               bounce: 0.004,
             });
-            if (winner) this.glows.push({ card: h, t: 0, dur: 2.4, peak: 1, hold: 1.4 });
+            const plays = !best || (h.cardId !== null && best.includes(h.cardId));
+            if (winner && plays) this.glows.push({ card: h, t: 0, dur: 2.4, peak: 1, hold: 1.4 });
           },
           TAG_HAND,
         );
@@ -1167,6 +1261,8 @@ class Dealing implements DealingSystem {
 
   reset(): void {
     this.sched.clear();
+    this.mayShow.fill(false);
+    this.showing.fill(false);
     this.clearCards();
     this.fades.length = 0;
     this.glows.length = 0;

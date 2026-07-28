@@ -35,8 +35,18 @@ import { cls, h, press, setText } from './dom.ts';
 
 // ═══════════════════════════ frame metal ═══════════════════════════
 
-/** The alloy a portrait ring is struck from. A ladder, not a palette. */
-export type Metal = 'gunmetal' | 'steel' | 'brass' | 'copper' | 'gold' | 'rose';
+/**
+ * The alloy a portrait ring is struck from.
+ *
+ * This is a *ladder*, not a palette, and it is a strict function of rarity —
+ * graphite, silver, bronze, gold, rose gold. Six seats therefore read as one
+ * set of medals, and the only question a ring can answer is "how rare is what
+ * this player is wearing", which is a question worth answering. Anything that
+ * made the alloy a free variable — an authored `metal` param, an account
+ * level, a hash of the player id — has been removed on purpose: those are the
+ * things that turn a table into a paint chart.
+ */
+export type Metal = 'gunmetal' | 'steel' | 'copper' | 'gold' | 'rose';
 
 export interface FrameLook {
   metal: Metal;
@@ -45,6 +55,7 @@ export interface FrameLook {
   frameName: string | null;
 }
 
+/** The whole colour system for seat rings, in five lines. */
 const RARITY_METAL: Record<Rarity, Metal> = {
   common: 'gunmetal',
   rare: 'steel',
@@ -53,50 +64,48 @@ const RARITY_METAL: Record<Rarity, Metal> = {
   mythic: 'rose',
 };
 
-/** Catalog frames carry a `metal` param — the authored answer wins. */
-const PARAM_METAL: Record<string, Metal> = {
-  steel: 'steel',
-  chrome: 'steel',
-  brass: 'brass',
-  copper: 'copper',
-  gold: 'gold',
-  gunmetal: 'gunmetal',
-};
-
 /** The five ids the bot roster equips are not all in the catalog yet. */
-const BOT_FRAMES: Record<string, [Metal, Rarity]> = {
-  'frame-brass': ['brass', 'common'],
-  'frame-onyx': ['gunmetal', 'rare'],
-  'frame-royal': ['gold', 'legendary'],
-  'frame-aurora': ['steel', 'epic'],
-  'frame-champion': ['copper', 'epic'],
+const BOT_FRAMES: Record<string, Rarity> = {
+  'frame-brass': 'common',
+  'frame-onyx': 'rare',
+  'frame-royal': 'legendary',
+  'frame-aurora': 'epic',
+  'frame-champion': 'epic',
 };
 
-/** No frame equipped? Earn the alloy with account level instead. */
-function rarityForLevel(level: number): Rarity {
-  if (level >= 60) return 'mythic';
-  if (level >= 38) return 'legendary';
-  if (level >= 22) return 'epic';
-  if (level >= 9) return 'rare';
-  return 'common';
-}
-
-export function frameLook(frameId: string | null, level: number): FrameLook {
+/**
+ * Resolves what a player is *wearing*. No frame equipped is not a failure to
+ * be papered over with a level lookup — it is the common case, and the common
+ * case gets the quiet graphite ring. A ring that brightens for nothing the
+ * player earned is a ring nobody learns to read.
+ */
+export function frameLook(frameId: string | null): FrameLook {
   if (frameId) {
     const item = itemById(frameId);
     if (item && item.kind === 'frame') {
-      const param = String(item.params.metal ?? '');
-      return {
-        metal: PARAM_METAL[param] ?? RARITY_METAL[item.rarity],
-        rarity: item.rarity,
-        frameName: item.name,
-      };
+      return { metal: RARITY_METAL[item.rarity], rarity: item.rarity, frameName: item.name };
     }
     const known = BOT_FRAMES[frameId];
-    if (known) return { metal: known[0], rarity: known[1], frameName: titleCase(frameId.replace(/^frame-/, '')) };
+    if (known) {
+      return {
+        metal: RARITY_METAL[known],
+        rarity: known,
+        frameName: titleCase(frameId.replace(/^frame-/, '')),
+      };
+    }
   }
-  const rarity = rarityForLevel(level);
-  return { metal: RARITY_METAL[rarity], rarity, frameName: null };
+  return { metal: RARITY_METAL.common, rarity: 'common', frameName: null };
+}
+
+/**
+ * The alloy a *seat* is struck in. Identical to the frame's, except that the
+ * hero is floored at gold: on the felt gold means "you", and you should never
+ * have to hunt for your own plate. Mythic is the one tier that outranks it,
+ * so the top of the ladder is never overwritten.
+ */
+export function seatMetal(look: FrameLook, hero: boolean): Metal {
+  if (!hero) return look.metal;
+  return look.metal === 'rose' ? 'rose' : 'gold';
 }
 
 function titleCase(slug: string): string {
@@ -417,7 +426,7 @@ export function openPlayerProfile(target: ProfileTarget, host: ProfileHost): She
   openHandle?.close();
 
   const p = target.hero ? heroIdentity(target.player) : target.player;
-  const look = frameLook(p.frameId, p.level);
+  const look = frameLook(p.frameId);
   const title = titleText(p.titleId);
   const country = countryName(p.countryCode);
   const bot = target.hero ? null : profileById(p.id);
@@ -433,7 +442,7 @@ export function openPlayerProfile(target: ProfileTarget, host: ProfileHost): She
   });
   const idBlock = h(
     'div',
-    { class: 'pp__id', 'data-metal': look.metal },
+    { class: 'pp__id', 'data-metal': seatMetal(look, target.hero), 'data-rarity': look.rarity },
     h(
       'div',
       { class: 'pp__port' },
@@ -446,12 +455,19 @@ export function openPlayerProfile(target: ProfileTarget, host: ProfileHost): She
       { class: 'pp__who' },
       h('h2', { class: 'pp__name' }, p.name),
       title ? h('div', { class: 'pp__title' }, title) : null,
+      // The ring on the plate is a rarity ladder, so the sheet is where it is
+      // decoded: the frame that earned the alloy, named, with its tier. Only
+      // a real equipped frame gets a tier chip — "Common" on every seat would
+      // be noise, and the graphite ring already says it.
       h(
         'div',
         { class: 'pp__meta' },
         h('span', null, country ?? `Level ${p.level}`),
-        country && look.frameName ? h('i', { class: 'pp__dot' }) : null,
-        country && look.frameName ? h('span', null, `${look.frameName} frame`) : null,
+        look.frameName ? h('i', { class: 'pp__dot' }) : null,
+        look.frameName ? h('span', null, `${look.frameName} frame`) : null,
+        look.frameName && look.rarity !== 'common'
+          ? h('span', { class: 'pp__rar caps', 'data-rarity': look.rarity }, look.rarity)
+          : null,
       ),
       h(
         'div',

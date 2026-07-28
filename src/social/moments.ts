@@ -214,6 +214,11 @@ export class MomentCapture {
     this.offs.push(
       bus.on('hand:deal-hole', ({ seat, cards }) => {
         if (!this.rec) this.rec = this.beginRecording(this.state?.handId ?? 0, this.state?.buttonSeat ?? 0);
+        // Record ONLY the hero's own cards here. This recording becomes a
+        // shareable HandReplay, so anything captured off the deal would
+        // publish every opponent's hole cards. Opponents are recorded at
+        // showdown, and only for seats that actually tabled their hand.
+        if (seat !== this.heroSeat) return;
         if (cards && cards.length) this.rec.hole.set(seat, cards.slice());
       }),
     );
@@ -237,6 +242,14 @@ export class MomentCapture {
       bus.on('hand:showdown', ({ results }) => {
         if (!this.rec) return;
         this.rec.results = results.slice();
+        // A tabled hand is public — record it now so the replay can show it.
+        // A mucked hand never becomes visible, so it is never recorded.
+        const seats = this.state?.seats ?? [];
+        for (const r of results) {
+          if (r.mucked || r.rank === null) continue;
+          const cards = seats[r.seat]?.holeCards;
+          if (cards && cards.length) this.rec.hole.set(r.seat, cards.slice());
+        }
       }),
     );
 

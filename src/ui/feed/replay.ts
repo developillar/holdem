@@ -438,7 +438,11 @@ export function openReplay(replay: HandReplay, opts: ReplayOpts = {}): ReplayHan
       // action — you already saw those cards on the card you tapped, and
       // watching your own hand play out is the whole point of a replay.
       const known = !!row?.holeCards && row.holeCards.length > 0;
-      const show = known && !folded && (f.revealed || seat === focus);
+      // A mucked hand is never public, and `folded` does not cover it — a
+      // player can reach showdown and still muck. Without this check the
+      // replay would expose hole cards that were never shown at the table.
+      const mucked = replay.results.some((r) => r.seat === seat && r.mucked);
+      const show = known && !folded && !mucked && (f.revealed || seat === focus);
       const wantKey = show ? (row!.holeCards as CardId[]).join(',') : folded ? 'folded' : 'down';
       if (view.cards.dataset.key !== wantKey) {
         view.cards.dataset.key = wantKey;

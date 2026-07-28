@@ -184,11 +184,25 @@
 /* ───────────────────────────── nameplates ───────────────────────────── */
 
 /**
- * Frame metals. Rarity is expressed as an alloy, never as a hue — gunmetal,
- * steel, brass, copper, gold, rose gold — so six seats read as one set of
- * medals rather than six unrelated colours. Gold and the greys come straight
- * from the token ramp; copper and rose gold are the two values the palette is
- * missing and belong in tokens.css the moment that file is open for edits.
+ * ── The seat ring is the one colour decision on a nameplate ──
+ *
+ * It is a strict function of the rarity of the frame the player is wearing,
+ * struck as an alloy and nothing else: graphite → silver → bronze → gold →
+ * rose gold. Five steps of one ladder, so six seats read as a shelf of medals
+ * instead of a paint chart, and the default — no frame equipped, which is
+ * most players — is the quietest step on it. The hero is floored at gold,
+ * because on this felt gold means "you".
+ *
+ * Nothing else on the plate is allowed to carry hue. The portraits are drawn
+ * procedurally and each one picks its own palette, so at 30px they were six
+ * unrelated colour swatches shouting over the ladder; inside a plate they are
+ * pulled back toward the metal and only climb back to full chroma as rarity
+ * does. The full-colour art is the reward on the profile sheet, at 84px,
+ * where it is a portrait rather than a dot.
+ *
+ * Gold and the greys come straight from the token ramp; bronze and rose gold
+ * are the two values the palette is missing and belong in tokens.css the
+ * moment that file is open for edits.
  */
 .table-screen,
 .pp-sheet {
@@ -200,7 +214,6 @@
 
 [data-metal='gunmetal'] { --fr-a: var(--c-slate-400); --fr-b: var(--c-slate-800); }
 [data-metal='steel'] { --fr-a: var(--c-slate-200); --fr-b: var(--c-slate-500); }
-[data-metal='brass'] { --fr-a: var(--c-gold-300); --fr-b: var(--c-gold-700); }
 [data-metal='copper'] { --fr-a: var(--metal-copper-hi); --fr-b: var(--metal-copper-lo); }
 [data-metal='gold'] { --fr-a: var(--c-gold-200); --fr-b: var(--c-gold-600); }
 [data-metal='rose'] { --fr-a: var(--metal-rose-hi); --fr-b: var(--metal-rose-lo); }
@@ -275,21 +288,32 @@
 
 .np__avwrap {
   position: relative;
-  width: 34px;
-  height: 34px;
+  width: 36px;
+  height: 36px;
   flex: none;
 }
 
+/* A 3px band, not a 2px hairline: the alloy has to be readable at arm's
+   length or the ladder carries no information at all. */
 .np__av {
   position: absolute;
-  inset: 2px;
+  inset: 3px;
   border-radius: 50%;
   display: grid;
   place-items: center;
   overflow: hidden;
   background: linear-gradient(150deg, var(--c-slate-600), var(--c-slate-900));
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.2), inset 0 -6px 10px rgba(0, 0, 0, 0.4);
+  /* Rarity is the only thing that buys chroma. Common sits near the metal —
+     pulled toward neutral rather than dimmed, because a dimmed portrait is
+     just mud, and a near-monochrome one reads as struck into the plate. */
+  filter: saturate(var(--np-chroma, 0.26)) contrast(1.06);
 }
+
+.np[data-rarity='rare'] .np__av { --np-chroma: 0.38; }
+.np[data-rarity='epic'] .np__av { --np-chroma: 0.56; }
+.np[data-rarity='legendary'] .np__av { --np-chroma: 0.74; }
+.np[data-rarity='mythic'] .np__av { --np-chroma: 0.9; }
 
 .np__img {
   position: absolute;
@@ -349,8 +373,9 @@
   opacity: 0.7;
 }
 
-.np[data-rarity='legendary'] .np__avwrap,
-.np[data-rarity='mythic'] .np__avwrap {
+/* Only the top two rungs earn a halo — that is what makes them read as the
+   top two rungs. */
+.np[data-rarity='legendary'] .np__avwrap {
   filter: drop-shadow(0 0 6px rgba(237, 201, 107, 0.28));
 }
 
@@ -428,7 +453,7 @@
 /* Timer ring — only ever one on the table at a time. */
 .np__ring {
   position: absolute;
-  inset: -5px;
+  inset: -4px;
   width: 44px;
   height: 44px;
   color: var(--c-good);
@@ -509,6 +534,12 @@
 .np.is-compact .np__name,
 .np.is-compact .np__bb { display: none; }
 .np.is-compact .np__stack { font-size: 12px; }
+
+/* The dealer disc keeps its reserved inset even here. Compact drops the
+   padding to claw back width, and on a 360px phone that put the button
+   straight on top of the stack — the one number the compact plate exists to
+   show. */
+.np.is-compact.is-btn .np__card { padding-right: 25px; }
 
 /* Running hot: a warm bloom on the card, never a second ring on the portrait. */
 .np.is-hot .np__card {
@@ -796,7 +827,8 @@
   margin-top: 6px;
   display: flex;
   align-items: center;
-  gap: 7px;
+  flex-wrap: wrap;
+  gap: 4px 7px;
   font: var(--t-body-sm);
   color: var(--c-slate-300);
 }
@@ -808,6 +840,27 @@
   background: var(--c-slate-500);
   flex: none;
 }
+
+/* The one place the rarity ramp is spelled out in words — so the alloy on the
+   seat ring is a thing a player can learn rather than guess at. The `--rar`
+   values match store.css exactly, but are restated because store.css ships in
+   a lazy chunk the table route never loads. */
+.pp__rar {
+  flex: none;
+  padding: 2px 7px;
+  border-radius: var(--r-pill);
+  font: var(--t-micro);
+  letter-spacing: var(--ls-caps);
+  text-transform: uppercase;
+  color: var(--rar, var(--c-slate-300));
+  background: color-mix(in srgb, var(--rar, var(--c-slate-300)) 14%, transparent);
+  border: 1px solid color-mix(in srgb, var(--rar, var(--c-slate-300)) 34%, transparent);
+}
+
+.pp__rar[data-rarity='rare'] { --rar: var(--c-rar-rare); }
+.pp__rar[data-rarity='epic'] { --rar: var(--c-rar-epic); }
+.pp__rar[data-rarity='legendary'] { --rar: var(--c-rar-legendary); }
+.pp__rar[data-rarity='mythic'] { --rar: var(--c-rar-mythic); }
 
 .pp__stack {
   margin-top: 8px;
@@ -1161,11 +1214,27 @@
   pointer-events: none;
 }
 
+/**
+ * A centre panel is a *notice*, and a notice must never eat a touch.
+ *
+ * These panels sit on z-index 5, two layers above the seat plates, and span
+ * 304px across the middle of the felt — which is exactly where the two
+ * side seats project. Turning the whole card into a pointer target while it
+ * was up meant that "Table filling up" silently swallowed every tap on those
+ * plates: the profile sheet simply never opened, with nothing on screen to
+ * explain why. Only the button inside a panel is interactive, so only the
+ * button takes pointer events.
+ */
 .ov.is-shown {
   opacity: 1;
   transform: none;
-  pointer-events: auto;
 }
+
+/* And only while the panel is actually up: these panels stay in the layout at
+   zero opacity, so an always-on button would be an invisible 304×52 slab
+   parked across the middle of the felt swallowing taps on the seats behind
+   it — the same bug, one element down. */
+.ov.is-shown .ov__go { pointer-events: auto; }
 
 .ov__glow {
   position: absolute;

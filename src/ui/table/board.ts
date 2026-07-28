@@ -1,8 +1,8 @@
 /**
  * ROYALE — the community board, and the card layer that owns it.
  *
- * Five slots in the clear middle band of the felt. Empty slots are recessed
- * wells with a dashed hairline, filled slots are real cards, and the ratio of
+ * Five slots in the clear middle band of the felt. Empty slots are shallow
+ * inlays routed into the cloth, filled slots are real cards, and the ratio of
  * one to the other is how you read the street from across the room — which is
  * why there is no label telling you.
  *
@@ -167,12 +167,25 @@ class Board implements BoardRow {
       });
       this.cards[i].setFaceUp(true, t.flip, wait + t.fly * 0.44);
 
-      // The reveal beat: a rim bloom timed to the moment the face squares up.
+      // Two beats, and they are not the same moment.
+      //
+      // Touchdown is when the flight's easing has spent itself — `EASE_OUT`
+      // and `EASE_SPRING` are both ~90% travelled at 0.62 of their duration —
+      // and that is where the impact belongs: the card compresses against the
+      // felt and the well seats under it.
+      //
+      // The bloom is the *reveal*, which happens later: the turn starts at
+      // 0.44 of the flight and takes `flip` ms to square up, so the gold flares
+      // when the face becomes readable, not while the card is still in the air
+      // with its back to the room.
       const slot = this.slots[i];
       slot.classList.toggle('is-drama', key !== 'flop');
-      this.blooms.push(delay(motionMs(wait + t.fly * 0.66), () => replay(slot, 'is-bloom')));
+      this.blooms.push(delay(motionMs(wait + t.fly * 0.62), () => replay(slot, 'is-land')));
+      this.blooms.push(
+        delay(motionMs(wait + t.fly * 0.44 + t.flip * 0.55), () => replay(slot, 'is-bloom')),
+      );
     }
-    if (this.blooms.length > 12) this.blooms.splice(0, this.blooms.length - 12);
+    if (this.blooms.length > 24) this.blooms.splice(0, this.blooms.length - 24);
   }
 
   sync(cards: readonly CardId[]): void {
@@ -185,7 +198,7 @@ class Board implements BoardRow {
       this.cards[i].cancel();
       if (want === null) {
         this.shown[i] = null;
-        this.slots[i].classList.remove('is-on', 'is-bloom', 'is-drama', 'is-pop');
+        this.slots[i].classList.remove('is-on', 'is-bloom', 'is-drama', 'is-pop', 'is-land');
         this.cards[i].setFaceUp(false, 0);
         continue;
       }
@@ -226,7 +239,7 @@ class Board implements BoardRow {
       this.cards[i].setDim(false);
       this.cards[i].setFaceUp(false, 0);
       this.shown[i] = null;
-      this.slots[i].classList.remove('is-on', 'is-bloom', 'is-drama', 'is-pop');
+      this.slots[i].classList.remove('is-on', 'is-bloom', 'is-drama', 'is-pop', 'is-land');
     }
     this.el.classList.remove('is-showdown');
     this.el.dataset.filled = '0';
@@ -267,6 +280,14 @@ function stage(): StageBridge | null {
 const DEAL_GRACE_MS = 150;
 /** Layout is re-measured on a cadence; the anchors are read every frame. */
 const MEASURE_MS = 240;
+/**
+ * Air between the bottom of the hero's cards and the top of the hero zone.
+ * Enough to read as a deliberate gap rather than a near miss — the hand and
+ * the strip below it are two objects, and they have to look like two objects.
+ */
+const HERO_CLEARANCE = 12;
+/** Air the hand keeps above it, so it can never climb into the felt's HUD. */
+const HERO_HEADROOM = 72;
 
 export interface CardLayer {
   readonly el: HTMLElement;
@@ -305,17 +326,22 @@ class Layer implements CardLayer {
   private topLimit = 124;
   private bottomLimit = 520;
   private heroGap = 152;
-  private gapFloor = Number.POSITIVE_INFINITY;
+  private gapCeil = 0;
   private lastVh = 0;
   private boardHalf = 38;
+  private ruler: HTMLElement;
+  private zoneEl: HTMLElement | null = null;
+  private zoneObs: ResizeObserver | null = null;
+  private measuring = false;
   private dead = false;
 
   constructor() {
     this.el = h('div', { class: 'rcards' });
+    this.ruler = h('i', { class: 'rcards__ruler', 'aria-hidden': 'true' });
     const origin = () => this.dealOrigin();
     this.board = createBoard(origin);
     this.hero = createHeroHand({ origin });
-    this.el.append(this.board.el, this.hero.el);
+    this.el.append(this.ruler, this.board.el, this.hero.el);
     this.bindBus();
     this.startFrame();
     this.remeasure();
@@ -353,14 +379,60 @@ class Layer implements CardLayer {
    * Measured on a cadence, never per frame. The frame loop writes transforms
    * only; a layout read in the same loop would undo the point of it.
    */
+  /**
+   * Watches the hero zone for the moment it changes shape.
+   *
+   * The measure cadence is 240 ms, and the action bar grows by ~50 px the
+   * instant it becomes your turn. Polling would leave the hand overlapped for
+   * up to a quarter of a second on the single most important beat in the hand,
+   * which is precisely when a player is looking at their cards. A resize
+   * observer fires after layout and before paint, so the re-park lands in the
+   * same frame as the growth and there is no window at all. The zone is a
+   * child of the table screen and is rebuilt on every route change, so the
+   * subscription follows the element rather than being made once.
+   */
+  private watchZone(zone: HTMLElement | null): void {
+    if (zone === this.zoneEl) return;
+    this.zoneEl = zone;
+    this.zoneObs?.disconnect();
+    if (!zone || typeof ResizeObserver !== 'function') return;
+    if (!this.zoneObs) {
+      this.zoneObs = new ResizeObserver(() => {
+        if (this.dead || this.measuring) return;
+        this.measureAcc = 0;
+        this.remeasure();
+      });
+    }
+    this.zoneObs.observe(zone);
+  }
+
   private remeasure(): void {
-    const cs = getComputedStyle(document.documentElement);
-    const px = (name: string): number => {
-      const v = parseFloat(cs.getPropertyValue(name));
-      return Number.isFinite(v) ? v : 0;
+    // Re-entrancy guard: `remeasure` writes the hand's transform, and a write
+    // inside a resize-observer callback that re-triggered the same callback
+    // would be the classic undelivered-notification loop.
+    if (this.measuring) return;
+    this.measuring = true;
+    try {
+      this.measureNow();
+    } finally {
+      this.measuring = false;
+    }
+  }
+
+  private measureNow(): void {
+    // `--safe-t` / `--safe-b` are `env()` tokens: a custom property's computed
+    // value is the token text, so parsing it gives NaN and, quietly, zero.
+    // The ruler is a real box carrying them as padding, where the standard
+    // property resolves to pixels.
+    const rs = getComputedStyle(this.ruler);
+    const px = (v: string): number => {
+      const n = parseFloat(v);
+      return Number.isFinite(n) ? n : 0;
     };
+    const safeT = px(rs.paddingTop);
+    const safeB = px(rs.paddingBottom);
     const vh = window.innerHeight;
-    this.topLimit = px('--safe-t') + 124;
+    this.topLimit = safeT + 124;
     this.boardHalf = (this.board.el.offsetHeight || 76) / 2;
 
     // The pot readout owns the band just below the board; never sit on it.
@@ -368,23 +440,40 @@ class Layer implements CardLayer {
     const potTop = pot ? pot.getBoundingClientRect().top : 0;
     this.bottomLimit = potTop > 40 ? potTop - 8 : vh * 0.52;
 
-    // The hand sits just above the action bar, and never under the home bar.
+    // ── where the hand parks ───────────────────────────────────────
     //
-    // The action bar changes height as it swaps between its idle, pre-action
-    // and live-turn layouts, so its top edge is not a stable rail. Tracking
-    // the *smallest* gap it has ever asked for parks the hand as low as the
-    // tallest state allows and then leaves it there — a hand that hopped 12 px
-    // every time it became your turn would be the most distracting object on
-    // the screen. The floor is reset whenever the viewport itself changes.
+    // The hero zone is the hand-strength strip plus the action bar, and it
+    // changes height constantly: the strip is absent until you have a hand to
+    // read, and the bar swaps between an idle row, a pre-action row and the
+    // live-turn layout with its sizing rail. Its top edge is therefore not a
+    // stable rail, and picking any single reading of it is picking one of the
+    // states to lose.
+    //
+    // So the hand parks above the *highest* the zone has ever reached and
+    // stays there. Parking above the lowest — which is what this did — puts
+    // the cards under the zone the moment it grows, and a poker app that
+    // slices the bottom off your own two cards has no argument left to make.
+    // Sitting a few pixels high in the idle state costs nothing: the felt
+    // above is empty. The ceiling resets when the viewport itself changes.
     if (vh !== this.lastVh) {
       this.lastVh = vh;
-      this.gapFloor = Number.POSITIVE_INFINITY;
+      this.gapCeil = 0;
     }
+    this.hero.measure();
     const zone = document.querySelector<HTMLElement>('.hero-zone');
+    this.watchZone(zone);
     const zoneTop = zone ? zone.getBoundingClientRect().top : 0;
-    const raw = zoneTop > 120 ? vh - zoneTop + 6 : px('--safe-b') + 152;
-    this.gapFloor = Math.min(this.gapFloor, raw);
-    this.heroGap = clamp(this.gapFloor, px('--safe-b') + 118, vh * 0.42);
+    const raw = zoneTop > 120 ? vh - zoneTop + HERO_CLEARANCE : safeB + 152;
+    // Rails on the *reading*, never on the result. The floor keeps the hand
+    // off the home indicator before the zone has laid itself out; the ceiling
+    // stops a single freak measurement — a sheet animating up from the bottom
+    // edge, say — from parking the hand in the middle of the felt for the rest
+    // of the session. Once a reading is in, it is honoured in full.
+    const painted = this.hero.paintedHeight || 116;
+    const lo = safeB + 118;
+    const hi = Math.max(lo, vh - painted - HERO_HEADROOM);
+    this.gapCeil = Math.max(this.gapCeil, clamp(raw, lo, hi));
+    this.heroGap = this.gapCeil;
 
     this.remount();
   }
@@ -586,6 +675,9 @@ class Layer implements CardLayer {
 
   dispose(): void {
     this.dead = true;
+    this.zoneObs?.disconnect();
+    this.zoneObs = null;
+    this.zoneEl = null;
     this.cancelPending();
     this.endFrame();
     for (const off of this.offs) off();

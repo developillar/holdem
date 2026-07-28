@@ -7,13 +7,15 @@
  * blinds, the dealer button, a draining timer ring, the last action pill,
  * floating win deltas, sit-out / disconnect states and an emote bubble anchor.
  *
- * Three guarantees the 3D projection cannot make on its own:
+ * Four guarantees the 3D projection cannot make on its own:
  *   • plates never overlap each other — they nudge apart, and collapse to a
  *     compact variant if the viewport leaves them no room to nudge into;
- *   • plates never leave the safe viewport;
+ *   • plates never leave the safe viewport, and never land on the community
+ *     row or the pot readout;
  *   • exactly one plate can ever show the acting-timer ring, because the ring
  *     is driven by a single acting seat resolved by the layer, never by six
- *     seats each deciding for themselves.
+ *     seats each deciding for themselves;
+ *   • a plate at rest is *actually* at rest — see `ANCHOR_WAKE`.
  *
  * Tapping a plate opens that player's profile; long-pressing opens the quick
  * seat menu the table screen installs.
@@ -32,6 +34,7 @@ import {
   frameLook,
   heroIdentity,
   openPlayerProfile,
+  seatMetal,
   shortName,
 } from './profile.ts';
 import type { SeatObserver } from './profile.ts';
@@ -41,7 +44,38 @@ const PILL_CLEARANCE = 26;
 /** Room reserved above a plate for the floating chip delta. */
 const TOP_CLEARANCE = 6;
 
-/** The timer arc rides the portrait: 34px disc + a 5px bleed on every side. */
+/**
+ * How far a projected anchor has to travel before a plate believes it.
+ *
+ * The camera runs a deliberate idle parallax — "under a degree of travel"
+ * (`render/camera.ts`) — which projects to roughly sixteen pixels of endless
+ * sway at the seat ring. On the felt that reads as air. On a DOM chip
+ * carrying a name and a stack it reads as jitter, it costs a style write per
+ * plate per frame for the life of the session, and it means a nameplate is
+ * never once still under a finger: every hit test lands on a target that has
+ * already moved. So the layer commits to an anchor and holds it. Only travel
+ * that could not possibly be breathing — a camera transition, a rotate, a
+ * seat change — wakes a plate and re-targets it.
+ *
+ * The plates therefore sit a few pixels off their exact projection, which is
+ * invisible because nothing is drawn underneath them, and dead still, which
+ * is not.
+ */
+const ANCHOR_WAKE = 18;
+/** Once woken, a plate parks again this close to its new anchor. */
+const ANCHOR_PARK = 0.4;
+/**
+ * The same idea one layer down: the solver's own inputs (the pot rect, the
+ * board band, a re-measure) can wobble by a pixel, and a plate must not chase
+ * that either.
+ */
+const POS_WAKE = 1.2;
+/** A reserved body that jumps further than this is a different body. */
+const BODY_RELOCATE = 40;
+/** Reserved bodies are re-measured on a cadence, never inside the frame loop. */
+const BODY_MEASURE_MS = 240;
+
+/** The timer arc rides the portrait: 36px disc + a 4px bleed on every side. */
 const TIMER_BOX = 44;
 const TIMER_R = 19;
 const TIMER_C = 2 * Math.PI * TIMER_R;
@@ -74,6 +108,15 @@ export interface Nameplate {
 interface PlateInternals extends Nameplate {
   pos: { x: number; y: number };
   target: { x: number; y: number };
+  /** the projected anchor this plate has committed to — see ANCHOR_WAKE */
+  hold: { x: number; y: number };
+  holdSet: boolean;
+  /** true while the plate is travelling to a woken anchor */
+  chasing: boolean;
+  /** true while the plate is easing to a solved target */
+  settling: boolean;
+  /** drops any turn treatment — for a seat the snapshot no longer describes */
+  stand(): void;
   visible: boolean;
   turn: boolean;
   compact: boolean;
@@ -189,6 +232,10 @@ function createPlate(seat: number, isHero: boolean): PlateInternals {
   let lastAvatar = '';
   let empty = true;
   let who: PlayerRef | null = null;
+  // The last transform actually written. A plate at rest writes nothing.
+  let wroteX = Number.NaN;
+  let wroteY = Number.NaN;
+  let wroteScale = Number.NaN;
 
   const setClockVisual = (frac: number): void => {
     ringArc.setAttribute('stroke-dashoffset', String((1 - frac) * TIMER_C));
@@ -211,12 +258,20 @@ function createPlate(seat: number, isHero: boolean): PlateInternals {
     seat,
     pos: { x: -400, y: -400 },
     target: { x: -400, y: -400 },
+    hold: { x: 0, y: 0 },
+    holdSet: false,
+    chasing: false,
+    settling: false,
     visible: false,
     turn: false,
     compact: false,
     crowd: 0,
 
     identity: () => who,
+
+    stand(): void {
+      clearTurn();
+    },
 
     update(st: SeatState, ctx: PlateContext, acting: boolean, actingMs: number): void {
       const raw = st.player;
@@ -253,9 +308,11 @@ function createPlate(seat: number, isHero: boolean): PlateInternals {
           if (url) img.src = url;
           cls(avatar, 'has-art', !!url);
         }
-        const look = frameLook(p.frameId, p.level);
+        // One colour decision per seat, and it is not a free one: the ring is
+        // the rarity of the frame this player is wearing, struck as an alloy.
+        const look = frameLook(p.frameId);
         el.dataset.rarity = look.rarity;
-        el.dataset.metal = look.metal;
+        el.dataset.metal = seatMetal(look, isHero);
         el.setAttribute('aria-label', `${p.name}, seat ${seat + 1}. Open profile`);
       }
       cls(el, 'is-hot', p.heat >= 0.62);
@@ -340,8 +397,18 @@ function createPlate(seat: number, isHero: boolean): PlateInternals {
         setClockVisual(clockTotal > 0 ? clockMs / clockTotal : 0);
         if (clockMs <= 0) clocking = false;
       }
-      const { x, y } = plate.pos;
-      el.style.transform = `translate3d(${x.toFixed(1)}px, ${y.toFixed(1)}px, 0) translate(-50%, -50%) scale(${sc.toFixed(3)})`;
+      // Quantise to the half-pixel grid and write only on a real change. At
+      // rest this is the difference between six style writes every frame and
+      // none at all — and it is what lets a plate hold still long enough to
+      // be hit-tested.
+      const x = Math.round(plate.pos.x * 2) / 2;
+      const y = Math.round(plate.pos.y * 2) / 2;
+      const s3 = Math.round(sc * 1000) / 1000;
+      if (x === wroteX && y === wroteY && s3 === wroteScale) return;
+      wroteX = x;
+      wroteY = y;
+      wroteScale = s3;
+      el.style.transform = `translate3d(${x}px, ${y}px, 0) translate(-50%, -50%) scale(${s3})`;
     },
 
     showDelta(amount: number, fmt: (v: number) => string): void {
@@ -461,6 +528,129 @@ export interface PlateLayer {
   dispose(): void;
 }
 
+/**
+ * A rectangle a plate may not sit on, held still between measurements.
+ *
+ * Every body plates dodge — the pot readout, the community row, the hero's
+ * own hand — is itself pinned to a projected anchor, so all of them breathe
+ * with the camera. Reading them raw would hand the plates the very sway the
+ * anchor hold exists to remove, so a body only counts as having moved once it
+ * has moved properly.
+ */
+class HeldBody {
+  readonly rect: ReservedRect = { x: 0, y: 0, w: 0, h: 0 };
+  live = false;
+  private l = 0;
+  private r = 0;
+  private t = 0;
+  private b = 0;
+  private acc = 1e4;
+
+  /**
+   * The held rect is the *envelope* of everything seen since the body last
+   * relocated — it only ever grows. A rect that snapped to each new reading
+   * would re-latch a couple of times a second as the anchor breathed, and
+   * every re-latch would nudge whichever plate was leaning on it; nothing
+   * would ever be still. Growing to the sway's outer edge converges inside
+   * one breath cycle and then never changes again, which costs a dozen pixels
+   * of extra clearance and buys a table that holds perfectly still.
+   */
+  poll(dtMs: number, read: () => ReservedRect | null): boolean {
+    this.acc += dtMs;
+    if (this.acc < BODY_MEASURE_MS) return this.live;
+    this.acc = 0;
+    const next = read();
+    if (!next || next.w < 8 || next.h < 8) {
+      this.live = false;
+      return false;
+    }
+    const nl = next.x - next.w / 2;
+    const nr = next.x + next.w / 2;
+    const nt = next.y - next.h / 2;
+    const nb = next.y + next.h / 2;
+    const relocated =
+      !this.live ||
+      Math.abs(next.x - this.rect.x) > BODY_RELOCATE ||
+      Math.abs(next.y - this.rect.y) > BODY_RELOCATE ||
+      Math.abs(next.w - this.rect.w) > BODY_RELOCATE ||
+      Math.abs(next.h - this.rect.h) > BODY_RELOCATE;
+    if (relocated) {
+      this.l = nl;
+      this.r = nr;
+      this.t = nt;
+      this.b = nb;
+    } else {
+      if (nl < this.l) this.l = nl;
+      if (nr > this.r) this.r = nr;
+      if (nt < this.t) this.t = nt;
+      if (nb > this.b) this.b = nb;
+    }
+    this.rect.x = (this.l + this.r) / 2;
+    this.rect.y = (this.t + this.b) / 2;
+    this.rect.w = this.r - this.l;
+    this.rect.h = this.b - this.t;
+    this.live = true;
+    return true;
+  }
+}
+
+/**
+ * Pushes a plate clear of a body, vertically when it can and horizontally
+ * only when it must. The plate's footprint is not its card: the last-action
+ * pill hangs below it and the win delta floats above it, and a "RAISE $0.27"
+ * pill landing on the flop is the same defect as the card landing on it.
+ *
+ * The direction has to be one the viewport will actually allow. Picking the
+ * shorter throw without asking is how the hero's plate ended up welded under
+ * his own hand on a 640px-tall phone: "down" was four pixels cheaper, the
+ * clamp put it straight back, and the two fought to a draw inside the cards
+ * every frame. So each direction is tested against the band the plate is
+ * allowed to occupy, and an illegal shortcut is not a shortcut.
+ */
+function evict(
+  i: number,
+  xs: Float32Array,
+  ys: Float32Array,
+  ws: Float32Array,
+  hs: Float32Array,
+  body: ReservedRect,
+  vertOnly: boolean,
+  loY: number,
+  hiY: number,
+): void {
+  const halfW = ws[i] / 2;
+  const bodyHalfW = body.w / 2;
+  if (Math.abs(xs[i] - body.x) >= halfW + bodyHalfW + 8) return;
+
+  const top = ys[i] - hs[i] / 2 - TOP_CLEARANCE;
+  const bottom = ys[i] + hs[i] / 2 + PILL_CLEARANCE;
+  const bodyTop = body.y - body.h / 2;
+  const bodyBottom = body.y + body.h / 2;
+  if (bottom <= bodyTop || top >= bodyBottom) return;
+
+  const up = bottom - bodyTop + 4;
+  const down = bodyBottom - top + 4;
+  const canUp = ys[i] - up >= loY - 0.5;
+  const canDown = ys[i] + down <= hiY + 0.5;
+  const bestVert = canUp && canDown ? Math.min(up, down) : canUp ? up : canDown ? down : Math.min(up, down);
+
+  if (!vertOnly) {
+    // Sideways is cheaper than a long vertical throw for a small body like
+    // the pot chip; for the full-width community row it never is.
+    const side = halfW + bodyHalfW + 10 - Math.abs(xs[i] - body.x);
+    if (side < bestVert) {
+      xs[i] += (xs[i] === body.x ? 1 : Math.sign(xs[i] - body.x)) * side;
+      return;
+    }
+  }
+  // With nowhere legal to go the shorter throw is still the least bad move —
+  // the clamp will arbitrate, and the compaction pass picks up the rest.
+  if (canUp && (!canDown || up <= down)) ys[i] -= up;
+  else if (canDown) ys[i] += down;
+  else if (up <= down) ys[i] -= up;
+  else ys[i] += down;
+}
+
 /** Fallback seat ring for when the renderer is unavailable. */
 function fallbackAnchor(seat: number, count: number, hero: number, b: PlateBounds): AnchorRead {
   const rel = ((seat - hero + count) % count) / count;
@@ -561,8 +751,35 @@ export function createPlateLayer(opts: PlateLayerOptions): PlateLayer {
     for (let i = 0; i < plates.length; i++) {
       const st = state.seats[i];
       if (st) plates[i].update(st, ctx, i === acting, actingMs);
+      else plates[i].stand();
     }
   }
+
+  // ── bodies plates route around.
+  //
+  // The pot readout arrives through `opts.reserved`. The two card surfaces do
+  // not: they are drawn by the card layer, which owns its own placement and
+  // has no channel to this one. Measuring their boxes is the only way this
+  // layer can know where the hand is being *read*, and a rect off the DOM on
+  // a 240ms cadence is cheaper — and far less brittle — than a second anchor
+  // contract; it also means the plates re-route for free whenever the card
+  // layer moves its own furniture. A missing element is simply no band.
+  const potBody = new HeldBody();
+  const cardBodies = [
+    // the community row, and the hero's own two cards, which park over the
+    // bottom seat and would otherwise bury the hero's stack entirely
+    { sel: '.rboard', body: new HeldBody(), el: null as HTMLElement | null },
+    { sel: '.rhero', body: new HeldBody(), el: null as HTMLElement | null },
+  ];
+
+  const readCardBody = (slot: (typeof cardBodies)[number]) => (): ReservedRect | null => {
+    if (!slot.el || !slot.el.isConnected) slot.el = document.querySelector<HTMLElement>(slot.sel);
+    if (!slot.el) return null;
+    const r = slot.el.getBoundingClientRect();
+    if (r.width < 8 || r.height < 8) return null;
+    return { x: r.left + r.width / 2, y: r.top + r.height / 2, w: r.width, h: r.height };
+  };
+  const cardReaders = cardBodies.map(readCardBody);
 
   // Collision + clamp resolution, then a single transform write per plate.
   const xs = new Float32Array(opts.seatCount);
@@ -580,8 +797,32 @@ export function createPlateLayer(opts: PlateLayerOptions): PlateLayer {
       const m = p.measure();
       ws[i] = m.w;
       hs[i] = m.h;
-      xs[i] = a.x;
-      ys[i] = a.y;
+
+      // ── anchor hold. Idle camera breathing is ignored outright; anything
+      // larger wakes the plate, which then eases across and parks again.
+      if (!p.holdSet) {
+        p.hold.x = a.x;
+        p.hold.y = a.y;
+        p.holdSet = true;
+        p.chasing = false;
+      } else {
+        if (!p.chasing && (Math.abs(a.x - p.hold.x) > ANCHOR_WAKE || Math.abs(a.y - p.hold.y) > ANCHOR_WAKE)) {
+          p.chasing = true;
+        }
+        if (p.chasing) {
+          const k = 1 - Math.pow(0.002, dt / 1000);
+          p.hold.x += (a.x - p.hold.x) * k;
+          p.hold.y += (a.y - p.hold.y) * k;
+          if (Math.abs(a.x - p.hold.x) < ANCHOR_PARK && Math.abs(a.y - p.hold.y) < ANCHOR_PARK) {
+            p.hold.x = a.x;
+            p.hold.y = a.y;
+            p.chasing = false;
+          }
+        }
+      }
+      xs[i] = p.hold.x;
+      ys[i] = p.hold.y;
+
       const vis = a.visible !== false;
       if (vis !== p.visible) {
         p.visible = vis;
@@ -590,9 +831,15 @@ export function createPlateLayer(opts: PlateLayerOptions): PlateLayer {
       if (vis) live.push(i);
     }
 
-    const res = opts.reserved?.() ?? null;
-    // Two relaxation passes are enough for nine plates and stay stable.
-    for (let pass = 0; pass < 2; pass++) {
+    // The vertical band a plate is allowed to occupy, pill and delta included.
+    const yFloor = (i: number): number => b.top + hs[i] / 2 + TOP_CLEARANCE;
+    const yCeil = (i: number): number => b.bottom - hs[i] / 2 - PILL_CLEARANCE;
+
+    const potLive = potBody.poll(dt, () => opts.reserved?.() ?? null);
+    const res = potLive ? potBody.rect : null;
+    for (let c = 0; c < cardBodies.length; c++) cardBodies[c].body.poll(dt, cardReaders[c]);
+    // Three relaxation passes: pairs, then the bodies, then the viewport.
+    for (let pass = 0; pass < 3; pass++) {
       for (let a = 0; a < live.length; a++) {
         for (let bIdx = a + 1; bIdx < live.length; bIdx++) {
           const i = live[a];
@@ -615,24 +862,29 @@ export function createPlateLayer(opts: PlateLayerOptions): PlateLayer {
           }
         }
       }
+      // The pot yields to the cards, so it is resolved first and the cards
+      // get the last word: on a short phone the free felt between the pot and
+      // the hero's hand is a few pixels narrower than a plate plus its
+      // clearances, and a plate kissing the pot's shadow is a far smaller
+      // failure than a plate sitting on the cards.
       if (res) {
         for (const i of live) {
-          const minX = (ws[i] + res.w) / 2 + 10;
-          const minY = (hs[i] + res.h) / 2 + 8;
-          const dx = xs[i] - res.x;
-          const dy = ys[i] - res.y;
-          if (Math.abs(dx) >= minX || Math.abs(dy) >= minY) continue;
-          const pushX = minX - Math.abs(dx);
-          const pushY = minY - Math.abs(dy);
-          if (pushY <= pushX) ys[i] += (dy === 0 ? 1 : Math.sign(dy)) * pushY;
-          else xs[i] += (dx === 0 ? 1 : Math.sign(dx)) * pushX;
+          evict(i, xs, ys, ws, hs, res, false, yFloor(i), yCeil(i));
         }
+      }
+      // Cards are the one thing a plate must never share pixels with: they
+      // are what the hand is read from. Both bands are wide relative to the
+      // phone, so plates only ever leave them vertically — sliding sideways
+      // would just park a plate on the far end of the same row.
+      for (const c of cardBodies) {
+        if (!c.body.live) continue;
+        for (const i of live) evict(i, xs, ys, ws, hs, c.body.rect, true, yFloor(i), yCeil(i));
       }
       for (const i of live) {
         xs[i] = clamp(xs[i], b.left + ws[i] / 2, b.right - ws[i] / 2);
         // The last-action pill hangs below the card and the win delta floats
         // above it — both have to stay inside the playable band.
-        ys[i] = clamp(ys[i], b.top + hs[i] / 2 + TOP_CLEARANCE, b.bottom - hs[i] / 2 - PILL_CLEARANCE);
+        ys[i] = clamp(ys[i], yFloor(i), yCeil(i));
       }
     }
 
@@ -661,15 +913,26 @@ export function createPlateLayer(opts: PlateLayerOptions): PlateLayer {
       const p = plates[i];
       p.target.x = xs[i];
       p.target.y = ys[i];
-      // First placement snaps; afterwards the plate eases so a camera move
-      // never makes the HUD jitter.
+      // First placement snaps; afterwards the plate eases, then parks. A
+      // sub-pixel wobble in the solver's inputs is not a reason to move.
       if (p.pos.x < -300) {
         p.pos.x = p.target.x;
         p.pos.y = p.target.y;
+        p.settling = false;
       } else {
-        const k = 1 - Math.pow(0.001, dt / 1000);
-        p.pos.x += (p.target.x - p.pos.x) * k;
-        p.pos.y += (p.target.y - p.pos.y) * k;
+        const dx = p.target.x - p.pos.x;
+        const dy = p.target.y - p.pos.y;
+        if (!p.settling && (Math.abs(dx) > POS_WAKE || Math.abs(dy) > POS_WAKE)) p.settling = true;
+        if (p.settling) {
+          const k = 1 - Math.pow(0.001, dt / 1000);
+          p.pos.x += dx * k;
+          p.pos.y += dy * k;
+          if (Math.abs(p.target.x - p.pos.x) < 0.2 && Math.abs(p.target.y - p.pos.y) < 0.2) {
+            p.pos.x = p.target.x;
+            p.pos.y = p.target.y;
+            p.settling = false;
+          }
+        }
       }
       p.step(dt);
     }
@@ -698,10 +961,13 @@ export function createPlateLayer(opts: PlateLayerOptions): PlateLayer {
         acting = next;
         if (acting >= 0) actingMs = state.seats[acting]?.timeBankMs ?? 0;
       }
+      // Every plate is told, every sync, whether it is the acting one. A seat
+      // the snapshot has stopped describing is told to stand down rather than
+      // being skipped, which is the only way two rings could ever coexist.
       for (let i = 0; i < plates.length; i++) {
         const st = state.seats[i];
-        if (!st) continue;
-        plates[i].update(st, ctx, i === acting, actingMs);
+        if (st) plates[i].update(st, ctx, i === acting, actingMs);
+        else plates[i].stand();
       }
     },
     plate: (seat: number) => plates[seat] ?? null,

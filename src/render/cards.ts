@@ -18,6 +18,20 @@
  *    hand — no geometry, no material, no vector. `acquire()` hands out a
  *    parked instance and `release()` takes it back.
  *
+ * ── The reveal gate ────────────────────────────────────────────────────────
+ * A card's face is not a rendering detail, it is privileged information, so
+ * showing one is opt-in and nothing else in this module can imply it:
+ *
+ *   • `acquire()` always returns a card that is face-DOWN and UNREVEALED.
+ *   • an unrevealed card binds the BACK print to both faces of the slab, so
+ *     the rank is not merely turned away — it is not in the material at all.
+ *     No spin, no interrupted flip, no relayout and no camera angle can leak
+ *     it, and neither can a bug in the code that poses it.
+ *   • `setFace()` loads DATA. It never grants visibility. Only `reveal(true)`,
+ *     `setFaceUp(true)` or `flip(_, true)` do, and `setFace(null)` revokes.
+ *   • a spin about the card's long axis — the one that turns it over in the
+ *     air — is refused outright on a card that has not been revealed.
+ *
  * This module also owns the shared tween core (`Ease`, `Dur`, `cubicBezier`)
  * that the dealing choreography builds on, so both use identical curves and
  * the app's motion reads as one system.
@@ -493,8 +507,21 @@ export interface CardMoveOpts {
   ease?: EaseFn;
   /** metres of vertical arc at the apex — the flick of a real deal */
   arc?: number;
-  /** extra turns about the card's long axis during flight */
+  /** extra turns during flight, unwinding to zero on landing */
   spin?: number;
+  /**
+   * Which axis `spin` turns about.
+   *
+   *   'long'  the card's long axis — it turns OVER in the air. Only ever
+   *           legitimate for a card that is allowed to be seen, because a
+   *           half-turn presents the printed side to the camera.
+   *   'plane' the card's own plane — a dealer's flick, like a frisbee. The
+   *           printed side never rotates toward the camera, so this is the
+   *           only safe spin for a card in flight to a seat.
+   *
+   * Defaults to 'plane': the safe one.
+   */
+  spinAxis?: 'long' | 'plane';
   /** land with a small vertical bounce and a bend ripple */
   bounce?: number;
   onDone?: () => void;
@@ -509,14 +536,36 @@ export interface CardHandle {
   readonly cardId: CardId | null;
   readonly faceUp: boolean;
   readonly busy: boolean;
+  /**
+   * True only while the card has been explicitly granted permission to print
+   * its face. Holding card data does not grant it — see `reveal()`.
+   */
+  readonly revealed: boolean;
+
+  /**
+   * Grants or revokes permission to show the printed face.
+   *
+   * This is the hard boundary between "the renderer knows a card" and "the
+   * player can see it". A card that has not been revealed draws its BACK on
+   * both sides of the slab, so no rotation, no interrupted flip, no stray
+   * pose and no mid-flight spin can expose a rank — the face texture is not
+   * bound to the material at all. `setFace()` never grants this; only an
+   * explicit `reveal(true)`, `setFaceUp(true)` or `flip(_, true)` does.
+   */
+  reveal(on: boolean): void;
 
   setFace(card: CardId | null): void;
   setBack(id: CardBackId): void;
   /** teleports — no animation */
   setPose(pos: THREE.Vector3, quat: THREE.Quaternion): void;
   moveTo(pos: THREE.Vector3, quat: THREE.Quaternion, opts?: CardMoveOpts): Promise<void>;
-  /** rotates about the card's long axis; resolves on landing */
+  /**
+   * Rotates about the card's long axis; resolves on landing. Passing
+   * `faceUp: true` is an explicit reveal. Omitting it only turns the card
+   * over — an unrevealed card shows its back on the far side too.
+   */
   flip(duration?: number, faceUp?: boolean): Promise<void>;
+  /** Instant turn. `true` is an explicit reveal, `false` revokes it. */
   setFaceUp(up: boolean): void;
   /** long-axis curl, short-axis cup, long-axis twist — all in local units */
   setBend(bend: number, cup?: number, twist?: number): void;
@@ -547,8 +596,15 @@ class Card implements CardHandle {
   private back: THREE.MeshPhysicalMaterial;
   private edge: THREE.MeshStandardMaterial;
   private faceTex: THREE.Texture;
+  private backTex: THREE.Texture;
   private bend: BendUniforms;
   private pool: Pool;
+
+  // reveal gate. `revealedFlag` is the ONLY thing that puts the face texture
+  // on the slab; `revokeOnFlipEnd` defers taking it off again until a
+  // turn-down has actually turned the print away from the camera.
+  private revealedFlag = false;
+  private revokeOnFlipEnd = false;
 
   // pose. `logical` is where the card *is*; `object.position` is that plus
   // the transient offsets a flip or a bounce adds, so an interrupted flip
@@ -569,6 +625,7 @@ class Card implements CardHandle {
   private ease: EaseFn = Ease.out;
   private arc = 0;
   private spin = 0;
+  private spinLong = false;
   private bounceAmt = 0;
   private fromPos = new THREE.Vector3();
   private toPos = new THREE.Vector3();
@@ -621,8 +678,11 @@ class Card implements CardHandle {
       depthWrite: true,
     } as const;
 
-    this.front = new THREE.MeshPhysicalMaterial({ ...common, map: this.faceTex });
-    this.back = new THREE.MeshPhysicalMaterial({ ...common, map: atlas.back(backId) });
+    this.backTex = atlas.back(backId);
+    // The slab is born face-down and unrevealed, so the FRONT group starts out
+    // carrying the back print too. The face texture is bound only by reveal().
+    this.front = new THREE.MeshPhysicalMaterial({ ...common, map: this.backTex });
+    this.back = new THREE.MeshPhysicalMaterial({ ...common, map: this.backTex });
     if (varnish) {
       this.front.clearcoatNormalMap = varnish;
       this.back.clearcoatNormalMap = varnish;
@@ -670,6 +730,29 @@ class Card implements CardHandle {
     return this.phase !== 'idle' || this.flipActive;
   }
 
+  get revealed(): boolean {
+    return this.revealedFlag && this.cardId !== null;
+  }
+
+  /**
+   * Binds whichever print the card is currently ALLOWED to show to the front
+   * group. Both groups carry unmirrored UVs from their own side of the slab
+   * (see `buildCardGeometry`), so the back print reads the right way round on
+   * either face — a hidden card is a card with two backs, not a mirrored one.
+   */
+  private applyFaceMap(): void {
+    const want = this.revealed ? this.faceTex : this.backTex;
+    if (this.front.map === want) return;
+    this.front.map = want;
+    this.front.needsUpdate = true;
+  }
+
+  reveal(on: boolean): void {
+    this.revealedFlag = on;
+    if (!on) this.revokeOnFlipEnd = false;
+    this.applyFaceMap();
+  }
+
   attach(cards: THREE.Group, shadows: THREE.Group): void {
     cards.add(this.object);
     shadows.add(this.shadow);
@@ -679,6 +762,12 @@ class Card implements CardHandle {
     this.active = true;
     this.cardId = null;
     this.faceUp = false;
+    // A card leaves the pool face-down AND unrevealed, every time. Nothing a
+    // previous holder did — a showdown reveal, a half-finished flip — can
+    // survive into the next hand.
+    this.revealedFlag = false;
+    this.revokeOnFlipEnd = false;
+    this.spinLong = false;
     this.flipAngle = Math.PI;
     this.phase = 'idle';
     this.flipActive = false;
@@ -702,19 +791,35 @@ class Card implements CardHandle {
     this.applyQuat();
   }
 
+  /**
+   * Loads card DATA. Deliberately not a visibility change: a card that has
+   * never been revealed goes on showing its back after this call, which is
+   * what stops an opponent's hand from being readable just because the
+   * renderer was handed it.
+   */
   setFace(card: CardId | null): void {
     this.cardId = card;
-    if (card === null) return;
+    if (card === null) {
+      // no data, no face — and never inherit the last holder's print
+      this.revealedFlag = false;
+      this.revokeOnFlipEnd = false;
+      this.applyFaceMap();
+      return;
+    }
     // offset/repeat feed the texture matrix, which three refreshes per draw —
     // no re-upload, which is the whole point of a single shared atlas
     const uv = cardFaces().getCardUV(card);
     this.faceTex.offset.copy(uv.offset);
     this.faceTex.repeat.copy(uv.repeat);
+    this.applyFaceMap();
   }
 
   setBack(id: CardBackId): void {
-    this.back.map = cardFaces().back(id);
+    this.backTex = cardFaces().back(id);
+    this.back.map = this.backTex;
     this.back.needsUpdate = true;
+    // a hidden card wears the back on both sides, so it changes with the skin
+    this.applyFaceMap();
   }
 
   setPose(pos: THREE.Vector3, quat: THREE.Quaternion): void {
@@ -743,6 +848,9 @@ class Card implements CardHandle {
     this.ease = opts.ease ?? Ease.out;
     this.arc = (opts.arc ?? 0) * (ms < 0.5 ? 0 : 1);
     this.spin = (opts.spin ?? 0) * (ms < 0.5 ? 0 : 1);
+    // A long-axis spin turns the slab over in the air. Never take one on a
+    // card that is not allowed to be seen, whatever the caller asked for.
+    this.spinLong = opts.spinAxis === 'long' && this.revealed;
     this.bounceAmt = (opts.bounce ?? 0) * (ms < 0.5 ? 0 : 1);
     this.t = 0;
     this.phase = this.delay > 0 ? 'delay' : 'move';
@@ -770,6 +878,21 @@ class Card implements CardHandle {
     this.flipT = 0;
     this.flipDur = Math.max(0.001, duration * motionScale());
     this.flipActive = Math.abs(d) > 1e-4;
+    // Permission. Note what is NOT here: an untargeted `flip()` that happens
+    // to land face-up says only "turn this over", never "show this rank", so
+    // it grants nothing — that card turns over onto a second back.
+    if (faceUp === true) {
+      // `flip(_, true)` is the explicit "table this hand". Granted now rather
+      // than at the halfway point: the front group is turned away for the
+      // first half of the arc anyway, so the print comes into view exactly as
+      // the card squares up to the camera.
+      this.reveal(true);
+    } else if (!want) {
+      // Revoke only once the print has actually turned away, or the face
+      // would pop to a back before the card had begun to move.
+      if (this.flipActive) this.revokeOnFlipEnd = true;
+      else this.reveal(false);
+    }
     const prev = this.flipDone;
     if (prev) prev();
     if (!this.flipActive) {
@@ -783,7 +906,10 @@ class Card implements CardHandle {
 
   setFaceUp(up: boolean): void {
     this.flipActive = false;
+    this.revokeOnFlipEnd = false;
     this.flipAngle = up ? 0 : Math.PI;
+    // instantaneous, so the print changes in the same frame as the pose
+    this.reveal(up);
     this.applyQuat();
   }
 
@@ -824,6 +950,8 @@ class Card implements CardHandle {
   cancel(): void {
     this.phase = 'idle';
     this.flipActive = false;
+    // an abandoned turn-down still has to end up hidden — the safe direction
+    if (this.revokeOnFlipEnd) this.reveal(false);
     if (this.moveDone) {
       const d = this.moveDone;
       this.moveDone = null;
@@ -843,6 +971,7 @@ class Card implements CardHandle {
     this.shadow.visible = false;
     this.halo.visible = false;
     this.cardId = null;
+    this.reveal(false);
     this.pool.recycle(this);
   }
 
@@ -869,7 +998,12 @@ class Card implements CardHandle {
       }
       this.base.slerpQuaternions(this.fromQuat, this.toQuat, e);
       if (this.spin !== 0) {
-        Q_TMP.setFromAxisAngle(AXIS_Y, this.spin * Math.PI * 2 * (1 - u) * u * 4);
+        // AXIS_Z turns the card in its own plane — a pitched card, and the
+        // printed side never rotates toward the camera. AXIS_Y turns it over.
+        Q_TMP.setFromAxisAngle(
+          this.spinLong ? AXIS_Y : AXIS_Z,
+          this.spin * Math.PI * 2 * (1 - u) * u * 4,
+        );
         this.base.multiply(Q_TMP);
       }
       if (u >= 1) {
@@ -915,6 +1049,7 @@ class Card implements CardHandle {
         this.flipAngle = this.flipTo;
         this.flipActive = false;
         this.flipLift = 0;
+        if (this.revokeOnFlipEnd) this.reveal(false);
         this.ripple = Math.max(this.ripple, 0.55);
         const d = this.flipDone;
         this.flipDone = null;
@@ -967,6 +1102,7 @@ class Card implements CardHandle {
 }
 
 const AXIS_Y = new THREE.Vector3(0, 1, 0);
+const AXIS_Z = new THREE.Vector3(0, 0, 1);
 const Q_TMP = new THREE.Quaternion();
 const E_TMP = new THREE.Euler();
 

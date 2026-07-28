@@ -62,6 +62,8 @@ const RAIL_OUT_Z = FELT_RZ + RAIL_W;
 const FELT_Y = 0;
 const CARD_LIFT = 0.0035;
 const CHIP_LIFT = 0.002;
+/** A chip's own radius plus a hair: how close to the cloth's edge one may sit. */
+const CHIP_EDGE = 0.07;
 
 /** Betting line: inside every seat's chips, outside the community band. */
 const BET_RX = 0.6;
@@ -82,9 +84,21 @@ const SEG_U = 192;
  * How far along the seat's radius its hole cards sit. Opponents ride close
  * to the rail so the middle of the felt stays empty; the hero comes further
  * in because those two cards are the most important object on the screen.
+ *
+ * 0.865 was not close enough. The two far seats sit at |sin θ| ≈ 0.57, so
+ * only a little over half their radius is depth, and their face-down slabs
+ * projected to within nine pixels of the community row's top edge — measured
+ * at 393 × 852, the slab's lower edge landed at y 277 with the row's band
+ * starting at 270. A card overlapping the flop is the same defect as a
+ * nameplate overlapping it, and the row is the thing the felt is *for*.
+ *
+ * `SIDE_PULL` is the extra push the seats out on the long sides get, where
+ * the radius buys the least depth: `1 − |sin θ|` is zero at the ends of the
+ * oval and largest at its widest point, which is exactly where the leak was.
  */
 const HERO_CARD_R = 0.795;
-const OPP_CARD_R = 0.865;
+const OPP_CARD_R = 0.9;
+const OPP_CARD_SIDE_PULL = 0.07;
 
 /**
  * Nameplate anchor ring, as a fraction of the rail centre-line. The widest
@@ -120,8 +134,17 @@ const RAIL_PERIMETER = ellipsePerimeter(RAIL_CX, RAIL_CZ);
  * the lower third of the frame clear for the hero's cards, the hero's chips
  * and the action bar underneath them.
  *
+ * Six-max additionally pulls its four side seats 3° toward the ends of the
+ * oval (148 → 145, 212 → 215 and their mirrors). Three degrees is nothing to
+ * look at and a lot to measure: |sin θ| carries the seat's depth, so the far
+ * pair's hole cards drop 7 px further up the screen and the near pair's drop
+ * 7 px down, which is 14 px of community band bought without moving a single
+ * nameplate into its neighbour. Any further and the far plates collide with
+ * the plate at the head of the table, which is a worse failure than a tight
+ * board — the solver would answer it by collapsing both to compact.
+ *
  * Measured at 393 × 852 with the shipped camera, the tightest pair of
- * nameplate anchors is 135 px apart at 6-max and 100 px at 9-max.
+ * nameplate anchors is 128 px apart at 6-max and 100 px at 9-max.
  */
 const SEAT_ANGLES_DEG: Record<number, number[]> = {
   1: [90],
@@ -129,7 +152,7 @@ const SEAT_ANGLES_DEG: Record<number, number[]> = {
   3: [90, 210, 330],
   4: [90, 165, 270, 15],
   5: [90, 153, 221, 319, 27],
-  6: [90, 148, 212, 270, 328, 32],
+  6: [90, 145, 215, 270, 325, 35],
   7: [90, 128, 165, 226, 314, 15, 52],
   8: [90, 128, 165, 212, 270, 328, 15, 52],
   9: [90, 126, 160, 204, 246, 294, 336, 20, 54],
@@ -167,6 +190,28 @@ function ellipse(rx: number, rz: number, a: number, y: number): THREE.Vector3 {
 }
 
 /**
+ * Pulls a felt anchor back inside the cloth.
+ *
+ * Chips do not rest on a padded rail — they slide off it — and on a portrait
+ * phone the two near-side seats are exactly where the oval is narrowest
+ * relative to how much furniture that seat has to park. Their stacks solved
+ * to |x| = 0.77 where the felt is only 0.73 wide, so the pile projected past
+ * the edge of the screen. Scaling the point back down its own ray keeps the
+ * seat's geometry and its symmetry intact and simply refuses to put a chip
+ * somewhere a chip cannot be; a point already inside is returned untouched.
+ */
+function ontoFelt(p: THREE.Vector3, margin: number): THREE.Vector3 {
+  const rx = FELT_RX - margin;
+  const rz = FELT_RZ - margin;
+  const d = Math.hypot(p.x / rx, p.z / rz);
+  if (d > 1) {
+    p.x /= d;
+    p.z /= d;
+  }
+  return p;
+}
+
+/**
  * Tangential offsets for the four hole-card slots, in units of `spread`.
  * Slots 0 and 1 straddle the centre so a two-card hand is symmetric about
  * the seat axis; 2 and 3 extend the row outward for PLO. Ordering the row
@@ -189,7 +234,7 @@ function buildSeats(size: number): SeatAnchors[] {
     // Seats out on the long sides are the ones whose cards would drift into
     // the community band, so they get pushed hardest into the rail.
     const sideBias = 1 - Math.abs(sin);
-    const cardR = hero ? HERO_CARD_R : OPP_CARD_R + 0.058 * sideBias;
+    const cardR = hero ? HERO_CARD_R : OPP_CARD_R + OPP_CARD_SIDE_PULL * sideBias;
     const spread = hero ? 0.068 : 0.054;
     const cardOrigin = new THREE.Vector3(edge.x * cardR, FELT_Y + CARD_LIFT, edge.z * cardR);
     const cards: THREE.Vector3[] = [];
@@ -204,22 +249,60 @@ function buildSeats(size: number): SeatAnchors[] {
       );
     }
 
-    // Street bets land just inside the printed line, nudged off the seat
-    // axis so a bet never buries the seat's own hole cards.
-    const betPoint = ellipse(BET_RX, BET_RZ, a, FELT_Y + CHIP_LIFT).multiplyScalar(0.88);
-    betPoint.x += tangent.x * 0.11;
-    betPoint.z += tangent.z * 0.11;
+    // ── which way the felt furniture is nudged off the seat axis ──────
+    //
+    // Every chip on this table is placed as `radius × edge + k × tangent`,
+    // and `tangent` has one fixed handedness all the way round the ring. So
+    // an offset written as a bare `+tangent` points *toward the camera* on
+    // the left-hand seats and *away from it* on the right-hand ones: two
+    // mirror-image seats come out mirrored in x and identical in z. The ring
+    // is symmetric; what sits on it was not.
+    //
+    // Measured at 393 × 852, that is why the far-right seat's chip stack
+    // projected on to the top of the community row while the far-left seat's
+    // sat 30 px clear of it, why the near-right seat's stack landed under its
+    // own nameplate, and why the far-left seat's bet came down to y 288 with
+    // the row's ink starting at 289 — chips on the flop. Signing each nudge
+    // by the tangent's own z makes the four side seats true mirrors, and lets
+    // each piece of furniture pick the direction that keeps it out of the
+    // middle of the felt.
+    //
+    // `railward` throws toward the far rail, which is where a stack and a
+    // button want to be — clear of the community row at the far seats and
+    // clear of the nameplate at the near ones. The two end seats have a
+    // purely lateral tangent, no z to sign, and keep the handedness they had.
+    const railward = tangent.z < 0 ? 1 : -1;
+    // A bet goes the other way: out toward its *own* end of the oval, which
+    // is the only direction that is away from the board for near and far
+    // seats alike.
+    const betward = Math.sign(sin * tangent.z) || 1;
+
+    // Street bets land on the printed line — outside it is the player's side
+    // of the cloth, inside it belongs to the pot — nudged off the seat axis
+    // so a bet never buries that seat's own hole cards.
+    const betPoint = ellipse(BET_RX, BET_RZ, a, FELT_Y + CHIP_LIFT);
+    betPoint.x += tangent.x * 0.11 * betward;
+    betPoint.z += tangent.z * 0.11 * betward;
     betPoint.y = FELT_Y + CHIP_LIFT;
 
-    const stack = new THREE.Vector3(
-      edge.x * (cardR - 0.04) - tangent.x * 0.235,
-      FELT_Y + CHIP_LIFT,
-      edge.z * (cardR - 0.04) - tangent.z * 0.235,
+    const stack = ontoFelt(
+      new THREE.Vector3(
+        edge.x * (cardR - 0.04) + tangent.x * 0.235 * railward,
+        FELT_Y + CHIP_LIFT,
+        edge.z * (cardR - 0.04) + tangent.z * 0.235 * railward,
+      ),
+      CHIP_EDGE,
     );
-    const button = new THREE.Vector3(
-      edge.x * (cardR - 0.13) + tangent.x * 0.205,
-      FELT_Y + 0.004,
-      edge.z * (cardR - 0.13) + tangent.z * 0.205,
+    // The button rides the same side as the stack — the only side of a side
+    // seat that is not the middle of the table — and is set 0.15 m further
+    // down the radius so the two never share a footprint.
+    const button = ontoFelt(
+      new THREE.Vector3(
+        edge.x * (cardR - 0.19) + tangent.x * 0.205 * railward,
+        FELT_Y + 0.004,
+        edge.z * (cardR - 0.19) + tangent.z * 0.205 * railward,
+      ),
+      CHIP_EDGE,
     );
 
     return {

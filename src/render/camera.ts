@@ -96,8 +96,15 @@ export interface CameraRig {
  * `BASE_ELEVATION` is the single most important number on this screen. Above
  * roughly 52° the oval flattens into a plan view — a diagram of a table, not
  * a table. Below roughly 38° the community row starts to collide with the far
- * rail and the pot disappears behind the board. 46° is where the near rail
- * still reads as *in front of you* while five cards stay legible.
+ * rail and the pot disappears behind the board.
+ *
+ * 49°, not 46°. On-screen depth scales with sin(elevation) while the framing
+ * solver holds the table's *width* fixed, so those three degrees stretch the
+ * felt vertically by 5 % — about six pixels of extra community band on a
+ * 393 × 852 phone, and the same again between every pair of seats. It is a
+ * small number bought at a small cost: the near rail still overhangs the
+ * bottom of the frame and still reads as being in front of you, which is the
+ * thing the low camera was protecting.
  *
  * `FIT_W` leaves 8 % of the width as margin so a nameplate pinned to a side
  * seat has somewhere to live; `FIT_H` only binds on short devices (640 px),
@@ -105,7 +112,7 @@ export interface CameraRig {
  * `FIT_CENTER_Y` sits the silhouette above centre, which is what reserves the
  * lower quarter of the frame for the hero's cards and the bet controls.
  */
-const BASE_ELEVATION = 46 * DEG;
+const BASE_ELEVATION = 49 * DEG;
 const BASE_FOV = 47;
 const FIT_W = 1.84;
 const FIT_H = 1.26;

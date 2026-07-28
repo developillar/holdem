@@ -184,10 +184,36 @@ export function createActionBar(opts: ActionBarOptions): ActionBar {
   let holdT = 0;
   let stopHold: (() => void) | null = null;
   let holdTicks = 0;
-  let trackW = 0;
-  let snapIndex = -1;
   let kpBuffer = '';
   let kpOpen = false;
+
+  // ── slider geometry and drag state
+  /** Must match the `.ab__thumb` width in table.css. */
+  const THUMB_PX = 30;
+  /** Preset magnet radius in track pixels. Deliberately narrower than a
+   *  fingertip: it exists to make a preset landable to the exact cent, not to
+   *  drag the thumb around. Anything wider and the magnet becomes a flat spot
+   *  the finger can feel — which is the bug, not the feature. */
+  const LOCK_PX = 3;
+  let trackW = 0;
+  let curveK = 0;
+  let curveBase = 1;
+  let curveLogR = 0;
+  let curveLinear = true;
+  const presetT: number[] = [];
+  let maxPresetIndex = -1;
+  let dragLeft = 0;
+  let dragW = 0;
+  let grabOffset = 0;
+  let lastPx = -1;
+  let snapIndex = -1;
+  /**
+   * The all-in hold prompt. In hold mode the raise button gives 40px to the
+   * filling ring, which leaves ~85px of label even on a 430pt phone — the old
+   * "Hold to confirm" measured 102px and was clipped at every width. The ring
+   * and the "All In" title above it carry the rest of the sentence.
+   */
+  const HOLD_PROMPT = 'Hold';
 
   const round = (v: number): number => Math.round(v / step) * step;
   const isAllIn = (): boolean => maxTo > 0 && amount >= maxTo - step / 2;
@@ -195,30 +221,140 @@ export function createActionBar(opts: ActionBarOptions): ActionBar {
 
   // ═══════════════════ slider maths ═══════════════════
 
-  // A geometric mapping, not a linear one: a linear slider buries every
-  // sensible bet in the first 15% of the track once a deep stack is behind it.
-  // On this curve ½-pot, pot and all-in land roughly a third apart.
+  const travelPx = (): number => Math.max(1, trackW - THUMB_PX);
+
+  /**
+   * The track curve.
+   *
+   * A linear slider buries every sensible bet in the first fifth of the track
+   * once a deep stack is behind it, so this one is geometric — but a *pure*
+   * geometric curve collapses the bottom of the range: 500bb deep, six pixels
+   * of travel above the minimum are worth less than one legal chip, so the
+   * number sticks while the finger keeps moving. What is solved here is the
+   * most geometric shifted-log curve whose slope at the minimum is still at
+   * least one chip per pixel: the shape the range wants, with no flat spot
+   * anywhere for the thumb to fall into.
+   *
+   *   v(t) = (min + k)·R^t − k,   R = (max + k)/(min + k)
+   *
+   * k = 0 is the pure geometric curve, k → ∞ is linear, and dv/dt at t = 0 is
+   * monotone in k — so a bisection finds the smallest k that clears the bar.
+   */
+  const solveCurve = (): void => {
+    curveK = 0;
+    curveBase = Math.max(minTo, 1e-9);
+    curveLogR = 0;
+    curveLinear = true;
+    if (maxTo <= minTo) return;
+
+    const slopeAt0 = (k: number): number => {
+      const base = minTo + k;
+      return base > 0 ? base * Math.log((maxTo + k) / base) : 0;
+    };
+    const need = step * travelPx();
+    // Past this offset the curve is linear to within a thousandth and the
+    // exponential starts shedding precision, so it doubles as the cap.
+    const cap = (maxTo - minTo) * 1000;
+    if (slopeAt0(cap) < need) return; // range too tight to curve at all
+
+    let k = 0;
+    if (slopeAt0(0) < need) {
+      let lo = 0;
+      let hi = cap;
+      for (let i = 0; i < 48; i++) {
+        const mid = (lo + hi) / 2;
+        if (slopeAt0(mid) < need) lo = mid;
+        else hi = mid;
+      }
+      k = hi;
+    }
+    const base = minTo + k;
+    const logR = base > 0 ? Math.log((maxTo + k) / base) : 0;
+    if (!(logR > 1e-9) || !Number.isFinite(logR)) return;
+    curveK = k;
+    curveBase = base;
+    curveLogR = logR;
+    curveLinear = false;
+  };
+
   const toT = (v: number): number => {
     if (maxTo <= minTo) return 0;
-    if (minTo > 0) return clamp(Math.log(Math.max(v, minTo) / minTo) / Math.log(maxTo / minTo), 0, 1);
-    return clamp((v - minTo) / (maxTo - minTo), 0, 1);
+    if (curveLinear) return clamp((v - minTo) / (maxTo - minTo), 0, 1);
+    return clamp(Math.log((clamp(v, minTo, maxTo) + curveK) / curveBase) / curveLogR, 0, 1);
   };
+
   const fromT = (t: number): number => {
     if (maxTo <= minTo) return minTo;
     const c = clamp(t, 0, 1);
-    if (minTo > 0) return minTo * Math.pow(maxTo / minTo, c);
-    return minTo + c * (maxTo - minTo);
+    if (curveLinear) return minTo + c * (maxTo - minTo);
+    return curveBase * Math.exp(c * curveLogR) - curveK;
   };
 
-  const measureTrack = (): void => {
-    trackW = trackEl.clientWidth || 260;
+  /** What one pixel of travel is worth, in money, at `v`. */
+  const slopePerPx = (v: number): number => {
+    if (maxTo <= minTo) return step;
+    if (curveLinear) return (maxTo - minTo) / travelPx();
+    return ((clamp(v, minTo, maxTo) + curveK) * curveLogR) / travelPx();
+  };
+
+  /** Largest 1–2–5 multiple of the chip step that still fits inside `span`. */
+  const niceUnits = (span: number): number => {
+    const units = span / step;
+    if (!(units > 1)) return 1;
+    const mag = Math.pow(10, Math.floor(Math.log10(units)));
+    let best = mag;
+    if (2 * mag <= units) best = 2 * mag;
+    if (5 * mag <= units) best = 5 * mag;
+    return Math.max(1, Math.round(best));
+  };
+
+  /**
+   * Quantise a dragged value. The increment follows the curve's local slope —
+   * cents down at the minimum, dimes at the top of a deep stack — and is never
+   * coarser than one pixel of travel, so every pixel changes the number.
+   */
+  const quantiseDrag = (v: number): number => {
+    const incU = niceUnits(slopePerPx(v));
+    const inc = incU * step;
+    const q = Math.round(Math.round(v / step) / incU) * inc;
+    // Both ends are values a player has to be able to land on exactly.
+    if (q >= maxTo - inc / 2) return maxTo;
+    if (q <= minTo + inc / 2) return minTo;
+    return q;
+  };
+
+  /** Preset positions along the track, plus the tick marks that show them. */
+  const buildTicks = (): void => {
+    presetT.length = 0;
+    maxPresetIndex = -1;
+    ticksEl.replaceChildren();
+    for (let i = 0; i < presets.length; i++) {
+      presetT.push(toT(presets[i].amount));
+      if (presets[i].amount >= maxTo - step / 2) maxPresetIndex = i;
+    }
+    if (maxTo <= minTo) return;
+    for (let i = 0; i < presets.length; i++) {
+      // All-in sits on the end stop and carries its own affordance; a tick
+      // there is just a second line drawn on the track's own edge.
+      if (i === maxPresetIndex) continue;
+      const tick = h('i', { class: 'ab__tick' });
+      tick.style.left = `${(presetT[i] * 100).toFixed(2)}%`;
+      ticksEl.appendChild(tick);
+    }
+  };
+
+  const measureTrack = (force = false): void => {
+    const next = trackEl.clientWidth || trackW || 260;
+    if (!force && Math.abs(next - trackW) < 0.5) return;
+    trackW = next;
+    solveCurve();
+    buildTicks();
   };
 
   const paintSlider = (): void => {
+    if (trackW === 0) measureTrack(true);
     const t = toT(amount);
-    if (trackW === 0) measureTrack();
-    const travel = Math.max(0, trackW - 30);
-    thumbEl.style.transform = `translate3d(${(t * travel).toFixed(1)}px, 0, 0)`;
+    thumbEl.style.transform = `translate3d(${(t * travelPx()).toFixed(2)}px, 0, 0)`;
     fillEl.style.transform = `scaleX(${t.toFixed(4)})`;
     cls(trackEl, 'is-max', isAllIn());
   };
@@ -231,10 +367,10 @@ export function createActionBar(opts: ActionBarOptions): ActionBar {
     if (aggressive) {
       const verb = aggressive.kind === 'bet' ? 'Bet' : 'Raise';
       setText(raiseTop, allIn ? 'All In' : sizing ? `${verb} to` : verb);
-      setText(raiseSub, allIn ? (sizing ? 'Hold to confirm' : fmt(amount)) : fmt(amount));
+      setText(raiseSub, allIn ? (sizing ? HOLD_PROMPT : fmt(amount)) : fmt(amount));
     } else if (legalOf('allin')) {
       setText(raiseTop, 'All In');
-      setText(raiseSub, sizing ? 'Hold to confirm' : fmt(amount));
+      setText(raiseSub, sizing ? HOLD_PROMPT : fmt(amount));
     }
     cls(raiseBtn, 'is-allin', allIn);
     cls(raiseBtn, 'is-hold', sizing && allIn);
@@ -243,16 +379,13 @@ export function createActionBar(opts: ActionBarOptions): ActionBar {
     }
   };
 
-  const setAmount = (v: number, fromSlider = false): void => {
+  const setAmount = (v: number): void => {
     const next = clamp(round(v), minTo, maxTo);
-    if (Math.abs(next - amount) < step / 4) {
-      if (fromSlider) paintSlider();
-      return;
+    if (Math.abs(next - amount) >= step / 4) {
+      amount = next;
+      paintAmount();
     }
-    amount = next;
-    paintAmount();
-    if (!fromSlider) paintSlider();
-    else paintSlider();
+    paintSlider();
   };
 
   // ═══════════════════ presets ═══════════════════
@@ -262,7 +395,6 @@ export function createActionBar(opts: ActionBarOptions): ActionBar {
   const buildPresets = (): void => {
     presetChips.clear();
     presetsEl.replaceChildren();
-    ticksEl.replaceChildren();
     for (const p of presets) {
       const chip = h('button', { class: 'ab__chip', type: 'button' }, h('span', null, p.label));
       presetChips.set(chip, p.amount);
@@ -275,45 +407,64 @@ export function createActionBar(opts: ActionBarOptions): ActionBar {
         },
       });
       presetsEl.appendChild(chip);
-      if (maxTo > minTo) {
-        const t = toT(p.amount);
-        const tick = h('i', { class: 'ab__tick' });
-        tick.style.left = `${(t * 100).toFixed(2)}%`;
-        ticksEl.appendChild(tick);
-      }
     }
   };
 
   // ═══════════════════ slider interaction ═══════════════════
 
-  const sliderFromX = (clientX: number): void => {
-    const rect = trackEl.getBoundingClientRect();
-    trackW = rect.width;
-    const travel = Math.max(1, rect.width - 30);
-    const t = clamp((clientX - rect.left - 15) / travel, 0, 1);
-    let value = fromT(t);
-
-    // Snap to the nearest preset when the finger is close to it.
-    let best = -1;
-    let bestDist = 0.032;
-    for (let i = 0; i < presets.length; i++) {
-      const d = Math.abs(toT(presets[i].amount) - t);
-      if (d < bestDist) {
-        bestDist = d;
-        best = i;
+  /** Nearest magnetised preset to a track position, or -1. */
+  const nearestPreset = (px: number, travel: number): number => {
+    let idx = -1;
+    let best = LOCK_PX;
+    for (let i = 0; i < presetT.length; i++) {
+      if (i === maxPresetIndex) continue; // all-in is deliberate, never magnetic
+      const d = Math.abs(px - presetT[i] * travel);
+      if (d <= best) {
+        best = d;
+        idx = i;
       }
     }
-    if (best >= 0) {
-      value = presets[best].amount;
-      if (best !== snapIndex) {
-        snapIndex = best;
+    return idx;
+  };
+
+  /**
+   * Drive the slider from a pointer position.
+   *
+   * The track is measured once per gesture, not once per move: the geometry
+   * cannot change mid-drag, and re-reading it on every pointermove is both a
+   * forced layout and a way for the thumb to disagree with the paint.
+   */
+  const applyDrag = (clientX: number, silent = false): void => {
+    const travel = Math.max(1, dragW - THUMB_PX);
+    const px = clamp(clientX - grabOffset - dragLeft - THUMB_PX / 2, 0, travel);
+    let value = quantiseDrag(fromT(px / travel));
+
+    // Detents: a tick as the finger crosses a preset, and a LOCK_PX magnet so
+    // a deliberate landing is exact to the cent. The tick fires on the
+    // crossing, not on the magnet, so a fast drag still counts off the presets
+    // it flies past.
+    let crossed = false;
+    for (let i = 0; i < presetT.length; i++) {
+      if (i === maxPresetIndex) continue;
+      const p = presetT[i] * travel;
+      if (lastPx >= 0 && (lastPx < p) !== (px < p)) crossed = true;
+    }
+    const lock = nearestPreset(px, travel);
+    if (lock >= 0) value = presets[lock].amount;
+    if (silent) {
+      snapIndex = lock;
+    } else if (lock !== snapIndex) {
+      snapIndex = lock;
+      if (lock >= 0) {
         haptic('tick');
         cue('chipClick', 0, 0.5);
       }
-    } else if (snapIndex !== -1) {
-      snapIndex = -1;
+    } else if (crossed && lock < 0) {
+      haptic('tick');
+      cue('chipClick', 0, 0.42);
     }
-    setAmount(value, true);
+    lastPx = px;
+    setAmount(value);
   };
 
   press(trackEl, {
@@ -322,18 +473,44 @@ export function createActionBar(opts: ActionBarOptions): ActionBar {
     sfx: 'chipClick',
     onDown: (e) => {
       cls(trackEl, 'is-dragging', true);
-      sliderFromX(e.clientX);
+      const rect = trackEl.getBoundingClientRect();
+      dragLeft = rect.left;
+      dragW = rect.width;
+      measureTrack();
+      const travel = Math.max(1, dragW - THUMB_PX);
+      const centre = dragLeft + THUMB_PX / 2 + toT(amount) * travel;
+      const off = e.clientX - centre;
+      // Grabbing the thumb picks it up exactly where it sits — the value must
+      // not move a cent. Pressing bare track jumps to the press. That split is
+      // what every native slider does, and it is what stops the "it teleported
+      // the moment I touched it" feeling.
+      const onThumb = Math.abs(off) <= THUMB_PX / 2;
+      grabOffset = onThumb ? off : 0;
+      if (onThumb) {
+        lastPx = toT(amount) * travel;
+        snapIndex = nearestPreset(lastPx, travel);
+        paintSlider();
+      } else {
+        lastPx = -1;
+        applyDrag(e.clientX, true);
+      }
     },
-    onMove: (e) => sliderFromX(e.clientX),
+    onMove: (e) => applyDrag(e.clientX),
     onUp: () => {
       cls(trackEl, 'is-dragging', false);
+      grabOffset = 0;
+      lastPx = -1;
       cue('chipStack', 2, 0, 0.5);
     },
   });
 
   const nudge = (dir: number): void => {
+    // The buttons speak the track's language: at least half a blind, and never
+    // finer than the increment the track itself is quantising to, so a tap
+    // always moves both the number and the thumb.
     const bbStep = ctx.bb > 0 ? Math.max(step, round(ctx.bb / 2)) : step;
-    setAmount(amount + dir * bbStep);
+    const trackStep = niceUnits(slopePerPx(amount)) * step;
+    setAmount(amount + dir * Math.max(bbStep, trackStep));
     haptic('tick');
     cue('chipClick', 0, 0.4);
   };
@@ -469,13 +646,20 @@ export function createActionBar(opts: ActionBarOptions): ActionBar {
     sizing = false;
     cls(el, 'is-sizing', false);
     cls(raiseBtn, 'is-hold', false);
+    // A hand can end with a finger still on the track. Leaving `is-dragging`
+    // behind would strand the thumb with its transition switched off.
+    cls(trackEl, 'is-dragging', false);
+    grabOffset = 0;
+    lastPx = -1;
   };
 
   const expandSizer = (): void => {
     if (sizing) return;
     sizing = true;
     cls(el, 'is-sizing', true);
-    measureTrack();
+    // Forced: the all-in fallback below rewrites min/max without a new turn,
+    // and the curve is solved from those.
+    measureTrack(true);
     paintSlider();
     paintAmount();
     cue('sheetOpen');
@@ -591,6 +775,15 @@ export function createActionBar(opts: ActionBarOptions): ActionBar {
       fire(raiseKind, amount);
     },
   });
+
+  // A rotation or a keyboard resize changes the track's width, and every
+  // position on it is derived from that width — so the curve is re-solved and
+  // the ticks re-laid the moment it moves.
+  const onViewportResize = (): void => {
+    measureTrack();
+    paintSlider();
+  };
+  window.addEventListener('resize', onViewportResize, { passive: true });
 
   // ═══════════════════ clock ═══════════════════
 
@@ -709,10 +902,13 @@ export function createActionBar(opts: ActionBarOptions): ActionBar {
       }
 
       snapIndex = -1;
+      lastPx = -1;
+      grabOffset = 0;
       buildPresets();
+      // Solve the curve and lay the ticks out before anything reads `toT`.
+      measureTrack(true);
       paintButtons();
       paintAmount();
-      measureTrack();
       paintSlider();
       startClock(timeMs);
       feedback('select', 'yourTurn');
@@ -774,6 +970,7 @@ export function createActionBar(opts: ActionBarOptions): ActionBar {
     dispose(): void {
       stopClockLoop();
       resetHold();
+      window.removeEventListener('resize', onViewportResize);
       el.remove();
     },
   };

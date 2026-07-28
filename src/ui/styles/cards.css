@@ -164,25 +164,33 @@
 }
 
 /**
- * The rank. 0.5× the card's width — roughly twice the optical size of the
- * index on a real playing card, which is the whole point: a physical deck is
- * read at arm's length in good light, and a phone is neither.
+ * The rank. Half the card's width by default — roughly twice the optical size
+ * of the index on a real playing card, which is the whole point: a physical
+ * deck is read at arm's length in good light, and a phone is neither.
+ *
+ * The ratio is a variable because the two readable surfaces shrank without
+ * their type shrinking with them. A smaller card whose rank still prints at
+ * the same number of millimetres is strictly better on a phone: the felt gets
+ * the space back and the glyph loses nothing. So the board asks for 0.56 and
+ * the hand for 0.54, which lands both glyphs within a pixel of the size they
+ * printed at when the cards were a fifth larger. Anything that has not opted
+ * in — the feed's mini cards, the history strip — keeps the 0.5 it had.
  */
 .rc__rank {
-  font: 800 calc(var(--rc-w) * 0.5) / 0.86 var(--f-num);
+  font: 800 calc(var(--rc-w) * var(--rc-rank, 0.5)) / 0.86 var(--f-num);
   letter-spacing: -0.055em;
   color: currentColor;
 }
 
 .rc__rank.is-wide {
-  font-size: calc(var(--rc-w) * 0.4);
+  font-size: calc(var(--rc-w) * var(--rc-rank-wide, 0.4));
   letter-spacing: -0.09em;
 }
 
 .rc__pip {
   display: block;
-  width: calc(var(--rc-w) * 0.28);
-  height: calc(var(--rc-w) * 0.28);
+  width: calc(var(--rc-w) * var(--rc-pip, 0.28));
+  height: calc(var(--rc-w) * var(--rc-pip, 0.28));
   margin-top: calc(var(--rc-w) * 0.035);
   fill: currentColor;
 }
@@ -260,9 +268,32 @@
    THE COMMUNITY BOARD
    ═══════════════════════════════════════════════════════════════ */
 
+/**
+ * The row's whole budget, stated once.
+ *
+ * Five cards, four gutters and two margins have to fit between the felt's
+ * inner edges — 325 CSS px at the community band on a 393 pt phone — and the
+ * *ratio* of gutter to card is what decides whether the row reads as five
+ * cards or as one striped block. At 0.11 it was the block. 0.22 is the number
+ * a dealer's spread actually looks like: a clear finger of cloth between one
+ * card and the next, all four identical to the pixel because they are the same
+ * flex `gap`.
+ *
+ * Paying for that gutter out of the card's width rather than out of the
+ * margins is what keeps the row centred with air at both ends — and it costs
+ * the rank almost nothing, because `--rc-rank` takes the glyph back up to
+ * within a pixel of the size it printed at when the card was 13.4vw.
+ *
+ * The ceiling is the *cloth*, not the viewport: the felt is an ellipse
+ * receding under a 49° camera, so at the community band it is only about
+ * 280 CSS px across even though the phone is 393. 11.6vw puts the row's ink
+ * at 268 px there, which is the widest it can be and still show a strip of
+ * green outside the first and fifth cards rather than running out under the
+ * rail.
+ */
 .rboard {
-  --rb-w: clamp(44px, 13.4vw, 58px);
-  --rb-gap: calc(var(--rb-w) * 0.11);
+  --rb-w: clamp(40px, 11.6vw, 50px);
+  --rb-gap: calc(var(--rb-w) * 0.22);
 
   position: fixed;
   left: 0;
@@ -278,6 +309,11 @@
 .rboard__slot {
   --rc-w: var(--rb-w);
   --rc-r: calc(var(--rc-w) * 0.115);
+  /* the card gave up 12 % of its width to the gutters; the index gives up
+     nothing, so a flop is read at exactly the type size it always was */
+  --rc-rank: 0.56;
+  --rc-rank-wide: 0.45;
+  --rc-pip: 0.3;
   position: relative;
   flex: 0 0 auto;
   width: var(--rc-w);
@@ -464,16 +500,24 @@
    ═══════════════════════════════════════════════════════════════ */
 
 /**
- * Hand width. The ceiling is the gap between the hero's own nameplate and the
- * top of the hero zone — about 245 px on a 393×852 phone, of which the hand
- * takes half. `board.ts` parks the hand clear of the zone in every state it
- * can reach, so the width can be set by legibility rather than by the tallest
- * thing that might appear underneath it: at 22.4vw the rank glyph is 44 px of
- * type on a 393 pt screen, which is the size it has to be for the two cards a
- * player looks at more often than anything else in the app.
+ * Hand width.
+ *
+ * At 22.4vw one hole card was 96 px on a 393 pt screen — 24 % of the width for
+ * one card, and over half the screen for the pair plus its fan. That is a hand
+ * that has stopped being a read and started being the subject of the shot,
+ * which is wrong: the felt's subject is the board.
+ *
+ * 18.2vw takes the painted card to ~80 px and hands ~40 px of screen back to
+ * the felt above it, while `--rc-rank: 0.54` keeps the index at 39 px — still
+ * larger than the app's display type, still readable in the corner of an eye
+ * mid-hand. Size was never what made these legible; the ratio was.
+ *
+ * `board.ts` parks the hand clear of the hero zone in every state that zone
+ * can reach, so this number is set by legibility, not by the tallest thing
+ * that might appear underneath it.
  */
 .rhero {
-  --rh-w: clamp(72px, 22.4vw, 96px);
+  --rh-w: clamp(62px, 18.2vw, 76px);
   --sq: 0;
   --n: 2;
   --fan-x: 0.6;
@@ -519,6 +563,8 @@
 .rhero__slot {
   --rc-w: var(--rh-w);
   --rc-r: calc(var(--rc-w) * 0.105);
+  --rc-rank: 0.54;
+  --rc-rank-wide: 0.43;
   position: absolute;
   left: 50%;
   bottom: 0;
@@ -590,23 +636,24 @@
 
 /* ── narrow phones: the fan tucks in so nothing leaves the frame ── */
 
+/* Narrow phones: the card gives, never the gutter. A row whose spacing
+   collapses on a 360 pt screen is exactly the row this rebalance existed to
+   fix, so `--rb-gap` stays proportional and only `--rb-w` moves. */
 @media (max-width: 374px) {
-  .rboard {
-    --rb-gap: calc(var(--rb-w) * 0.08);
-  }
   .rhero {
-    --rh-w: 74px;
+    --rh-w: clamp(58px, 17.2vw, 66px);
   }
 }
 
 /* Short phones (360×640 and friends): the felt, the pot and the hero zone all
-   want the same 640 px, and the hand is the one that can give. */
+   want the same 640 px, and the cards are what can give. Both rows step down
+   together so the felt keeps the same proportions it has on a tall phone. */
 @media (max-height: 700px) {
   .rboard {
-    --rb-w: clamp(40px, 12.4vw, 52px);
+    --rb-w: clamp(36px, 10.8vw, 44px);
   }
   .rhero {
-    --rh-w: clamp(64px, 19vw, 78px);
+    --rh-w: clamp(54px, 15.6vw, 62px);
   }
 }
 

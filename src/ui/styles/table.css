@@ -1530,14 +1530,20 @@
   transform: none;
 }
 
+/* The padding is hit-area, not layout: the negative margin hands it straight
+   back, so the row still occupies exactly its 36px pill height in the column
+   while each chip's touch target reaches 44px by claiming the gap beneath it.
+   It stops exactly where the track's own 44px target starts. */
 .ab__presets {
   display: flex;
   gap: 6px;
   overflow-x: auto;
-  padding-bottom: 1px;
+  padding-bottom: 8px;
+  margin-bottom: -8px;
 }
 
 .ab__chip {
+  position: relative;
   flex: 1 0 auto;
   min-width: 58px;
   height: 36px;
@@ -1552,6 +1558,12 @@
     background var(--d-fast) linear, border-color var(--d-fast) linear;
 }
 
+.ab__chip::after {
+  content: '';
+  position: absolute;
+  inset: 0 0 -8px;
+}
+
 .ab__chip.is-pressed { transform: scale(0.94); }
 
 .ab__chip.is-active {
@@ -1563,7 +1575,7 @@
 
 .ab__slider-row {
   display: grid;
-  grid-template-columns: 42px minmax(0, 1fr) 42px;
+  grid-template-columns: 44px minmax(0, 1fr) 44px;
   align-items: center;
   gap: var(--sp-2);
 }
@@ -1571,8 +1583,8 @@
 .ab__step {
   display: grid;
   place-items: center;
-  width: 42px;
-  height: 42px;
+  width: 44px;
+  height: 44px;
   border-radius: var(--r-md);
   color: var(--c-slate-200);
   background: linear-gradient(180deg, rgba(35, 42, 59, 0.86), rgba(16, 20, 30, 0.9));
@@ -1612,6 +1624,7 @@
   transform-origin: left center;
   background: var(--grad-gold-soft);
   box-shadow: 0 0 12px rgba(217, 169, 58, 0.36);
+  transition: transform var(--d-fast) var(--ease-snap);
 }
 
 .ab__track.is-max .ab__fill {
@@ -1654,7 +1667,10 @@
   border: 1px solid rgba(255, 255, 255, 0.6);
   box-shadow: 0 2px 6px rgba(0, 0, 0, 0.55), 0 6px 16px rgba(0, 0, 0, 0.4),
     inset 0 -2px 4px rgba(0, 0, 0, 0.22);
-  transition: transform var(--d-instant) linear;
+  /* Eased only for updates the finger is not driving — preset chips, the
+     +/- steps, the keypad. During a drag the transition is killed below:
+     a thumb that eases toward the finger is a thumb that lags it. */
+  transition: transform var(--d-fast) var(--ease-snap);
   will-change: transform;
 }
 
@@ -1670,12 +1686,31 @@
     0 0 0 8px rgba(217, 169, 58, 0.16), inset 0 -2px 4px rgba(0, 0, 0, 0.22);
 }
 
+/* Under the finger the thumb is not animated — it *is* the finger. */
+.ab__track.is-dragging .ab__thumb,
+.ab__track.is-dragging .ab__fill {
+  transition: none;
+}
+
+/* All-in is a decision, not a slider position: the end stop lights up so it
+   reads as a deliberate place to be rather than somewhere you drifted. */
+.ab__track.is-max .ab__thumb {
+  border-color: rgba(255, 190, 160, 0.7);
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.55), 0 6px 16px rgba(0, 0, 0, 0.4),
+    0 0 0 6px rgba(224, 67, 31, 0.2), inset 0 -2px 4px rgba(0, 0, 0, 0.22);
+}
+
+.ab__track.is-max.is-dragging .ab__thumb {
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.55), 0 8px 22px rgba(0, 0, 0, 0.5),
+    0 0 0 8px rgba(224, 67, 31, 0.28), inset 0 -2px 4px rgba(0, 0, 0, 0.22);
+}
+
 .ab__amount {
   display: flex;
   align-items: center;
   justify-content: center;
   gap: 8px;
-  height: 40px;
+  height: 44px;
   padding: 0 14px;
   border-radius: var(--r-md);
   background: var(--s-sunken);
@@ -3441,7 +3476,9 @@
 @media (max-width: 372px) {
   .ab__b { height: 54px; }
   .ab__b-t { font-size: 14.5px; }
-  .ab__chip { min-width: 52px; height: 34px; padding: 0 10px; font-size: 12px; }
+  /* Height holds at 36px on narrow phones — below that the 44px touch target
+     built from the row's padding no longer clears the 44pt floor. */
+  .ab__chip { min-width: 52px; padding: 0 10px; font-size: 12px; }
   .ab__pre { height: 44px; font-size: 11.5px; gap: 5px; }
   /* Narrow phones get a tighter plate, but the name keeps enough room that
      the optical-sizing steps can do their job instead of the ellipsis. */

@@ -284,8 +284,31 @@ const MEASURE_MS = 240;
  * Air between the bottom of the hero's cards and the top of the hero zone.
  * Enough to read as a deliberate gap rather than a near miss — the hand and
  * the strip below it are two objects, and they have to look like two objects.
+ * Twelve px was a near miss: at a 3× density that is four device pixels more
+ * than the hand's own drop shadow, so the two touched.
  */
-const HERO_CLEARANCE = 12;
+const HERO_CLEARANCE = 22;
+/**
+ * Air between the bottom of the board row and the top of the pot readout.
+ *
+ * This is the one clamp that actually binds on a portrait phone — the felt's
+ * community band is shorter than the board plus the pot wants — so it is not
+ * a safety rail, it is the spacing decision. Eight px read as the pot being
+ * *stuck to* the flop; sixteen reads as two separate objects in a column, and
+ * is what lets the board own a band of its own.
+ *
+ * It scales with the viewport because the pot readout does not: the chip and
+ * its number are the same 49 px tall on a 640 pt screen as on a 932 pt one,
+ * so a short phone has proportionally less felt to divide between them. Spend
+ * the full sixteen there and the clamp pushes the row back *up* into the far
+ * seats' chips — which is the collision this clearance exists to walk away
+ * from, arrived at from the other side.
+ */
+const POT_CLEARANCE_MAX = 16;
+
+function potClearance(vh: number): number {
+  return Math.round(Math.min(POT_CLEARANCE_MAX, vh * 0.019));
+}
 /** Air the hand keeps above it, so it can never climb into the felt's HUD. */
 const HERO_HEADROOM = 72;
 
@@ -438,7 +461,7 @@ class Layer implements CardLayer {
     // The pot readout owns the band just below the board; never sit on it.
     const pot = document.querySelector<HTMLElement>('.pot');
     const potTop = pot ? pot.getBoundingClientRect().top : 0;
-    this.bottomLimit = potTop > 40 ? potTop - 8 : vh * 0.52;
+    this.bottomLimit = potTop > 40 ? potTop - potClearance(vh) : vh * 0.52;
 
     // ── where the hand parks ───────────────────────────────────────
     //

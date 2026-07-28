@@ -67,6 +67,26 @@ const HOLD_MS = 620;
 export function createActionBar(opts: ActionBarOptions): ActionBar {
   const { fmt, step } = opts;
 
+  /**
+   * Money for a figure the finger is holding.
+   *
+   * `opts.fmt` is the room's compact formatter: it prints $8.00 as "$8", which
+   * is right on a stack pill and wrong on the one number being dragged — the
+   * string loses two characters mid-sweep and shoves a centred row sideways.
+   * `screens/table.ts` keeps a `cashExact` for exactly this reason but does not
+   * export it, so the bar carries its own: same digits, fixed length, grouped
+   * thousands, and the caller's own currency mark so tournament chips still
+   * read as chips.
+   */
+  const exactDecimals = step < 1 ? 2 : 0;
+  const currencyMark = (/^[^0-9-]*/.exec(fmt(0)) ?? [''])[0];
+  const fmtExact = (v: number): string => {
+    const fixed = Math.abs(v).toFixed(exactDecimals);
+    const cut = exactDecimals > 0 ? fixed.length - exactDecimals - 1 : fixed.length;
+    const grouped = fixed.slice(0, cut).replace(/\B(?=(\d{3})+$)/g, ',');
+    return `${v < 0 ? '-' : ''}${currencyMark}${grouped}${fixed.slice(cut)}`;
+  };
+
   // ── timer ribbon
   const timerFill = h('i', { class: 'ab__timer-fill' });
   const timer = h('div', { class: 'ab__timer', 'aria-hidden': 'true' }, timerFill);
@@ -84,7 +104,7 @@ export function createActionBar(opts: ActionBarOptions): ActionBar {
   const sliderRow = h('div', { class: 'ab__slider-row' }, minusBtn, trackEl, plusBtn);
 
   // ── sizer: exact amount
-  const amountText = h('span', { class: 'ab__amt-v tnum' }, fmt(0));
+  const amountText = h('span', { class: 'ab__amt-v tnum' }, fmtExact(0));
   const amountBb = h('span', { class: 'ab__amt-bb tnum' }, '');
   const amountBtn = h(
     'button',
@@ -195,18 +215,40 @@ export function createActionBar(opts: ActionBarOptions): ActionBar {
    *  drag the thumb around. Anything wider and the magnet becomes a flat spot
    *  the finger can feel — which is the bug, not the feature. */
   const LOCK_PX = 3;
+  /** How much track every gap between two named sizings wants. */
+  const ANCHOR_GAP_PX = 40;
+  /**
+   * How far a single legal chip may be stretched.
+   *
+   * Between two nearby sizings there may only be a handful of legal amounts —
+   * five cents separate a 2.5x and a 3x open at these stakes — and no curve can
+   * put more numbers on the track than the chip grid contains. Past this the
+   * value would stand still under a moving finger for longer than the preset
+   * magnet already does (2 × LOCK_PX), which is the widest plateau this track
+   * is willing to own.
+   */
+  const MAX_PX_PER_CHIP = 6;
+
+  /** One span of the track between two anchors, shifted-geometric inside. */
+  interface CurveSeg {
+    t0: number;
+    t1: number;
+    v0: number;
+    v1: number;
+    /** v(u) = (v0 + shift)·e^(u·logR) − shift; logR = 0 means linear. */
+    shift: number;
+    logR: number;
+  }
+
   let trackW = 0;
-  let curveK = 0;
-  let curveBase = 1;
-  let curveLogR = 0;
-  let curveLinear = true;
+  let segs: CurveSeg[] = [];
   const presetT: number[] = [];
   let maxPresetIndex = -1;
   let dragLeft = 0;
-  let dragW = 0;
   let grabOffset = 0;
   let lastPx = -1;
   let snapIndex = -1;
+  let dragPointerId = -1;
   /**
    * The all-in hold prompt. In hold mode the raise button gives 40px to the
    * filling ring, which leaves ~85px of label even on a 430pt phone — the old
@@ -224,77 +266,178 @@ export function createActionBar(opts: ActionBarOptions): ActionBar {
   const travelPx = (): number => Math.max(1, trackW - THUMB_PX);
 
   /**
-   * The track curve.
+   * The gentlest shifted-geometric shape over [v0, v1] whose slope at v0 is
+   * still worth at least one chip per pixel:
    *
-   * A linear slider buries every sensible bet in the first fifth of the track
-   * once a deep stack is behind it, so this one is geometric — but a *pure*
-   * geometric curve collapses the bottom of the range: 500bb deep, six pixels
-   * of travel above the minimum are worth less than one legal chip, so the
-   * number sticks while the finger keeps moving. What is solved here is the
-   * most geometric shifted-log curve whose slope at the minimum is still at
-   * least one chip per pixel: the shape the range wants, with no flat spot
-   * anywhere for the thumb to fall into.
+   *   v(u) = (v0 + k)·R^u − k,   R = (v1 + k)/(v0 + k)
    *
-   *   v(t) = (min + k)·R^t − k,   R = (max + k)/(min + k)
-   *
-   * k = 0 is the pure geometric curve, k → ∞ is linear, and dv/dt at t = 0 is
-   * monotone in k — so a bisection finds the smallest k that clears the bar.
+   * k = 0 is the pure geometric curve, k → ∞ is linear, and dv/du at u = 0 is
+   * monotone in k, so a bisection finds the smallest k that clears the bar.
+   * Used where there is no anchor to hang the span on: with nothing to aim at,
+   * resolution wins.
    */
-  const solveCurve = (): void => {
-    curveK = 0;
-    curveBase = Math.max(minTo, 1e-9);
-    curveLogR = 0;
-    curveLinear = true;
-    if (maxTo <= minTo) return;
-
+  const solveShift = (v0: number, v1: number, widthPx: number): number => {
+    const need = step * Math.max(1, widthPx);
     const slopeAt0 = (k: number): number => {
-      const base = minTo + k;
-      return base > 0 ? base * Math.log((maxTo + k) / base) : 0;
+      const base = v0 + k;
+      return base > 0 ? base * Math.log((v1 + k) / base) : 0;
     };
-    const need = step * travelPx();
     // Past this offset the curve is linear to within a thousandth and the
     // exponential starts shedding precision, so it doubles as the cap.
-    const cap = (maxTo - minTo) * 1000;
-    if (slopeAt0(cap) < need) return; // range too tight to curve at all
-
-    let k = 0;
-    if (slopeAt0(0) < need) {
-      let lo = 0;
-      let hi = cap;
-      for (let i = 0; i < 48; i++) {
-        const mid = (lo + hi) / 2;
-        if (slopeAt0(mid) < need) lo = mid;
-        else hi = mid;
-      }
-      k = hi;
+    const cap = (v1 - v0) * 1000;
+    if (slopeAt0(cap) < need) return cap; // range too tight to curve at all
+    if (slopeAt0(0) >= need) return 0;
+    let lo = 0;
+    let hi = cap;
+    for (let i = 0; i < 48; i++) {
+      const mid = (lo + hi) / 2;
+      if (slopeAt0(mid) < need) lo = mid;
+      else hi = mid;
     }
-    const base = minTo + k;
-    const logR = base > 0 ? Math.log((maxTo + k) / base) : 0;
-    if (!(logR > 1e-9) || !Number.isFinite(logR)) return;
-    curveK = k;
-    curveBase = base;
-    curveLogR = logR;
-    curveLinear = false;
+    return hi;
+  };
+
+  const makeSeg = (t0: number, t1: number, v0: number, v1: number, shift: number): CurveSeg => {
+    const base = v0 + shift;
+    const r = base > 0 ? Math.log((v1 + shift) / base) : 0;
+    return { t0, t1, v0, v1, shift, logR: Number.isFinite(r) && r > 1e-9 ? r : 0 };
+  };
+
+  /**
+   * The track curve, built against the presets.
+   *
+   * A slider is only as good as the sizes a thumb can actually land on, and
+   * the sizes that matter are the ones the room already names: ⅓ pot, ½ pot,
+   * ¾ pot, pot. A single curve fitted to the whole range — linear or geometric
+   * — packs all four into the first few percent of the track the moment a deep
+   * stack is behind them, and no amount of tuning fixes that, because the
+   * problem is the *shape*, not its parameters.
+   *
+   * So the presets are the ruler. Every gap between two named sizings gets its
+   * own span of track, asking for `ANCHOR_GAP_PX` and settling for whatever the
+   * chip grid can honestly fill; inside a span the value runs geometrically, so
+   * the curve is continuous and monotone with no kink to see. Whatever is left
+   * over goes to the overbet tail, which is the only part of the range that can
+   * afford to be coarse.
+   */
+  const buildCurve = (): void => {
+    segs = [];
+    if (maxTo <= minTo) return;
+    const travel = travelPx();
+
+    // ── anchors: the minimum, every preset strictly inside the range, the max
+    const vals: number[] = [minTo];
+    const sorted = presets.map((p) => p.amount).sort((a, b) => a - b);
+    for (const a of sorted) {
+      if (a <= minTo + step / 2 || a >= maxTo - step / 2) continue;
+      if (a <= vals[vals.length - 1] + step / 2) continue;
+      vals.push(a);
+    }
+    vals.push(maxTo);
+    const n = vals.length - 1;
+    if (n < 2) {
+      segs = [makeSeg(0, 1, minTo, maxTo, solveShift(minTo, maxTo, travel))];
+      return;
+    }
+
+    // ── how much track each span wants
+    const shift0 = minTo > 0 ? 0 : step;
+    const nat: number[] = [];
+    let natSum = 0;
+    for (let i = 0; i < n; i++) {
+      const w = Math.log((vals[i + 1] + shift0) / (vals[i] + shift0));
+      nat.push(w);
+      natSum += w;
+    }
+    // Half an even share, half the span's own geometric weight: even alone
+    // hands a five-cent gap the same room as the entire overbet range, weight
+    // alone starves it. Then floors and caps have the final say.
+    const floor = Math.min(ANCHOR_GAP_PX, travel / (n + 1));
+    const caps: number[] = [];
+    const w: number[] = [];
+    let sum = 0;
+    for (let i = 0; i < n; i++) {
+      const cap = Math.max(1, (MAX_PX_PER_CHIP * (vals[i + 1] - vals[i])) / step);
+      const share = natSum > 0 ? nat[i] / natSum : 1 / n;
+      const raw = travel * (0.5 / n + 0.5 * share);
+      caps.push(cap);
+      w.push(Math.min(Math.max(raw, Math.min(floor, cap)), cap));
+      sum += w[i];
+    }
+    // Spare track goes to whatever still has room, by geometric weight — in
+    // practice the tail above pot, which is where the coarseness belongs.
+    for (let pass = 0; pass < 8 && travel - sum > 0.05; pass++) {
+      let room = 0;
+      for (let i = 0; i < n; i++) if (caps[i] - w[i] > 1e-9) room += nat[i] + 1e-6;
+      if (room <= 0) break;
+      const spare = travel - sum;
+      for (let i = 0; i < n; i++) {
+        if (caps[i] - w[i] <= 1e-9) continue;
+        const give = Math.min(caps[i] - w[i], (spare * (nat[i] + 1e-6)) / room);
+        w[i] += give;
+        sum += give;
+      }
+    }
+    // Every span capped (a range with fewer chips in it than the track has
+    // pixels) or floors that overran the track: scale the whole ruler to fit.
+    if (sum > 0 && Math.abs(sum - travel) > 0.05) {
+      const scale = travel / sum;
+      for (let i = 0; i < n; i++) w[i] *= scale;
+    }
+
+    let t = 0;
+    for (let i = 0; i < n; i++) {
+      const next = i === n - 1 ? 1 : clamp(t + w[i] / travel, 0, 1);
+      segs.push(makeSeg(t, Math.max(next, t + 1e-6), vals[i], vals[i + 1], shift0));
+      t = next;
+    }
+  };
+
+  const segAtV = (v: number): CurveSeg | null => {
+    for (let i = 0; i < segs.length; i++) {
+      if (v <= segs[i].v1 || i === segs.length - 1) return segs[i];
+    }
+    return null;
+  };
+
+  const segAtT = (t: number): CurveSeg | null => {
+    for (let i = 0; i < segs.length; i++) {
+      if (t <= segs[i].t1 || i === segs.length - 1) return segs[i];
+    }
+    return null;
   };
 
   const toT = (v: number): number => {
-    if (maxTo <= minTo) return 0;
-    if (curveLinear) return clamp((v - minTo) / (maxTo - minTo), 0, 1);
-    return clamp(Math.log((clamp(v, minTo, maxTo) + curveK) / curveBase) / curveLogR, 0, 1);
+    const c = clamp(v, minTo, maxTo);
+    const sg = segAtV(c);
+    if (!sg) return 0;
+    const span = sg.t1 - sg.t0;
+    if (sg.logR <= 0) {
+      const d = sg.v1 - sg.v0;
+      return clamp(sg.t0 + (d > 0 ? ((c - sg.v0) / d) * span : 0), 0, 1);
+    }
+    return clamp(sg.t0 + (Math.log((c + sg.shift) / (sg.v0 + sg.shift)) / sg.logR) * span, 0, 1);
   };
 
   const fromT = (t: number): number => {
-    if (maxTo <= minTo) return minTo;
     const c = clamp(t, 0, 1);
-    if (curveLinear) return minTo + c * (maxTo - minTo);
-    return curveBase * Math.exp(c * curveLogR) - curveK;
+    const sg = segAtT(c);
+    if (!sg) return minTo;
+    const span = sg.t1 - sg.t0;
+    const u = span > 0 ? clamp((c - sg.t0) / span, 0, 1) : 0;
+    if (sg.logR <= 0) return sg.v0 + (sg.v1 - sg.v0) * u;
+    return (sg.v0 + sg.shift) * Math.exp(u * sg.logR) - sg.shift;
   };
 
   /** What one pixel of travel is worth, in money, at `v`. */
   const slopePerPx = (v: number): number => {
-    if (maxTo <= minTo) return step;
-    if (curveLinear) return (maxTo - minTo) / travelPx();
-    return ((clamp(v, minTo, maxTo) + curveK) * curveLogR) / travelPx();
+    const c = clamp(v, minTo, maxTo);
+    const sg = segAtV(c);
+    if (!sg) return step;
+    const px = (sg.t1 - sg.t0) * travelPx();
+    if (px <= 0) return step;
+    if (sg.logR <= 0) return Math.max(0, sg.v1 - sg.v0) / px;
+    return ((c + sg.shift) * sg.logR) / px;
   };
 
   /** Largest 1–2–5 multiple of the chip step that still fits inside `span`. */
@@ -311,7 +454,11 @@ export function createActionBar(opts: ActionBarOptions): ActionBar {
   /**
    * Quantise a dragged value. The increment follows the curve's local slope —
    * cents down at the minimum, dimes at the top of a deep stack — and is never
-   * coarser than one pixel of travel, so every pixel changes the number.
+   * coarser than one pixel of travel, so the number moves as often as the chip
+   * grid allows and never in a jump the finger did not ask for. Where a span
+   * holds fewer legal amounts than it has pixels the grid wins: nothing can
+   * invent a bet size between two adjacent cents, which is why `buildCurve`
+   * refuses to stretch a span past `MAX_PX_PER_CHIP` in the first place.
    */
   const quantiseDrag = (v: number): number => {
     const incU = niceUnits(slopePerPx(v));
@@ -334,20 +481,26 @@ export function createActionBar(opts: ActionBarOptions): ActionBar {
     }
     if (maxTo <= minTo) return;
     for (let i = 0; i < presets.length; i++) {
-      // All-in sits on the end stop and carries its own affordance; a tick
-      // there is just a second line drawn on the track's own edge.
-      if (i === maxPresetIndex) continue;
+      // Either end stop carries its own affordance; a tick there is just a
+      // second line drawn on the track's own edge. A preset that clamped down
+      // onto the minimum — ⅓ pot in a tiny pot — lands on the left one.
+      if (i === maxPresetIndex || presetT[i] <= 0.0005) continue;
       const tick = h('i', { class: 'ab__tick' });
       tick.style.left = `${(presetT[i] * 100).toFixed(2)}%`;
       ticksEl.appendChild(tick);
     }
   };
 
-  const measureTrack = (force = false): void => {
-    const next = trackEl.clientWidth || trackW || 260;
+  /**
+   * `width` lets a gesture hand in the rect it already measured: the drag and
+   * the paint must agree on the travel to the pixel, and reading the layout a
+   * second time is both a forced reflow and a chance for them to disagree.
+   */
+  const measureTrack = (force = false, width?: number): void => {
+    const next = width && width > 1 ? width : trackEl.clientWidth || trackW || 260;
     if (!force && Math.abs(next - trackW) < 0.5) return;
     trackW = next;
-    solveCurve();
+    buildCurve();
     buildTicks();
   };
 
@@ -360,17 +513,19 @@ export function createActionBar(opts: ActionBarOptions): ActionBar {
   };
 
   const paintAmount = (): void => {
-    setText(amountText, fmt(amount));
-    setText(amountBb, ctx.bb > 0 ? `${(amount / ctx.bb).toFixed(amount / ctx.bb >= 100 ? 0 : 1)} bb` : '');
+    setText(amountText, fmtExact(amount));
+    // One decimal at every size: `toFixed(0)` above 100bb shortens the string
+    // as the number grows, which is a jitter in the opposite direction.
+    setText(amountBb, ctx.bb > 0 ? `${(amount / ctx.bb).toFixed(1)} bb` : '');
     const aggressive = legalOf('raise') ?? legalOf('bet');
     const allIn = isAllIn();
     if (aggressive) {
       const verb = aggressive.kind === 'bet' ? 'Bet' : 'Raise';
       setText(raiseTop, allIn ? 'All In' : sizing ? `${verb} to` : verb);
-      setText(raiseSub, allIn ? (sizing ? HOLD_PROMPT : fmt(amount)) : fmt(amount));
+      setText(raiseSub, allIn ? (sizing ? HOLD_PROMPT : fmtExact(amount)) : fmtExact(amount));
     } else if (legalOf('allin')) {
       setText(raiseTop, 'All In');
-      setText(raiseSub, sizing ? HOLD_PROMPT : fmt(amount));
+      setText(raiseSub, sizing ? HOLD_PROMPT : fmtExact(amount));
     }
     cls(raiseBtn, 'is-allin', allIn);
     cls(raiseBtn, 'is-hold', sizing && allIn);
@@ -435,7 +590,8 @@ export function createActionBar(opts: ActionBarOptions): ActionBar {
    * forced layout and a way for the thumb to disagree with the paint.
    */
   const applyDrag = (clientX: number, silent = false): void => {
-    const travel = Math.max(1, dragW - THUMB_PX);
+    if (dragPointerId === -1 || !sizing) return;
+    const travel = travelPx();
     const px = clamp(clientX - grabOffset - dragLeft - THUMB_PX / 2, 0, travel);
     let value = quantiseDrag(fromT(px / travel));
 
@@ -467,17 +623,47 @@ export function createActionBar(opts: ActionBarOptions): ActionBar {
     setAmount(value);
   };
 
+  /**
+   * Tear a gesture down from the outside.
+   *
+   * A hand can end with a finger still on the track: the clock expires, the
+   * engine acts for us, `setTurn` rebuilds min/max under a live sweep and every
+   * further pointermove writes a bet into a hand that is already over. Dropping
+   * the class is not enough — the pointer is *captured*, so the moves keep
+   * arriving here no matter where the finger goes. Release the capture and
+   * cancel the press so the helper forgets the pointer too.
+   */
+  const cancelDrag = (): void => {
+    cls(trackEl, 'is-dragging', false);
+    grabOffset = 0;
+    lastPx = -1;
+    snapIndex = -1;
+    if (dragPointerId === -1) return;
+    const id = dragPointerId;
+    dragPointerId = -1;
+    try {
+      if (trackEl.hasPointerCapture(id)) trackEl.releasePointerCapture(id);
+    } catch {
+      /* the platform may have released it already */
+    }
+    try {
+      trackEl.dispatchEvent(new PointerEvent('pointercancel', { pointerId: id }));
+    } catch {
+      /* synthetic events are best-effort; the guard above already stopped it */
+    }
+  };
+
   press(trackEl, {
     slop: 10000,
     haptic: 'tick',
     sfx: 'chipClick',
     onDown: (e) => {
+      dragPointerId = e.pointerId;
       cls(trackEl, 'is-dragging', true);
       const rect = trackEl.getBoundingClientRect();
       dragLeft = rect.left;
-      dragW = rect.width;
-      measureTrack();
-      const travel = Math.max(1, dragW - THUMB_PX);
+      measureTrack(false, rect.width);
+      const travel = travelPx();
       const centre = dragLeft + THUMB_PX / 2 + toT(amount) * travel;
       const off = e.clientX - centre;
       // Grabbing the thumb picks it up exactly where it sits — the value must
@@ -497,6 +683,10 @@ export function createActionBar(opts: ActionBarOptions): ActionBar {
     },
     onMove: (e) => applyDrag(e.clientX),
     onUp: () => {
+      // A gesture that was cancelled from the outside has already been torn
+      // down, and its lift is not a landing worth a sound.
+      if (dragPointerId === -1) return;
+      dragPointerId = -1;
       cls(trackEl, 'is-dragging', false);
       grabOffset = 0;
       lastPx = -1;
@@ -521,7 +711,7 @@ export function createActionBar(opts: ActionBarOptions): ActionBar {
 
   const kpRefresh = (): void => {
     const v = kpBuffer === '' ? 0 : Number(kpBuffer);
-    setText(kpValue, kpBuffer === '' ? fmt(amount) : `${kpBuffer}`);
+    setText(kpValue, kpBuffer === '' ? fmtExact(amount) : `${kpBuffer}`);
     setText(kpBb, ctx.bb > 0 ? `${((kpBuffer === '' ? amount : v) / ctx.bb).toFixed(1)} bb` : '');
     const valid = kpBuffer === '' || (v >= minTo - 1e-9 && v <= maxTo + 1e-9);
     cls(kpValue, 'is-bad', !valid);
@@ -642,15 +832,11 @@ export function createActionBar(opts: ActionBarOptions): ActionBar {
   };
 
   const collapseSizer = (): void => {
+    cancelDrag();
     if (!sizing) return;
     sizing = false;
     cls(el, 'is-sizing', false);
     cls(raiseBtn, 'is-hold', false);
-    // A hand can end with a finger still on the track. Leaving `is-dragging`
-    // behind would strand the thumb with its transition switched off.
-    cls(trackEl, 'is-dragging', false);
-    grabOffset = 0;
-    lastPx = -1;
   };
 
   const expandSizer = (): void => {
@@ -840,7 +1026,9 @@ export function createActionBar(opts: ActionBarOptions): ActionBar {
       cls(callBtn, 'is-check', true);
     } else if (call) {
       setText(callTop, ctx.toCall >= ctx.stack ? 'Call All In' : 'Call');
-      setText(callSub, fmt(ctx.toCall));
+      // Same formatter as the raise beside it: "$8" next to "$8.60" in one row
+      // reads as two different currencies.
+      setText(callSub, fmtExact(ctx.toCall));
       cls(callBtn, 'is-check', false);
     }
     cls(callBtn, 'is-disabled', !check && !call);
@@ -901,9 +1089,8 @@ export function createActionBar(opts: ActionBarOptions): ActionBar {
         presets = [];
       }
 
-      snapIndex = -1;
-      lastPx = -1;
-      grabOffset = 0;
+      // A new turn never inherits a live gesture from the last one.
+      cancelDrag();
       buildPresets();
       // Solve the curve and lay the ticks out before anything reads `toT`.
       measureTrack(true);

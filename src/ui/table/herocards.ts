@@ -66,6 +66,17 @@ export function motionMs(ms: number): number {
   return REDUCED?.matches ? 1 : ms;
 }
 
+/**
+ * True when the player has asked the OS for less motion.
+ *
+ * `motionMs` covers everything with a duration, but the hand's parking pass is
+ * a per-frame spring rather than a keyframed animation, and a spring has no
+ * duration to collapse — it has to be told to arrive instead.
+ */
+export function reducedMotion(): boolean {
+  return !!REDUCED?.matches;
+}
+
 export const EASE_OUT = 'cubic-bezier(0.16, 1, 0.3, 1)';
 export const EASE_SPRING = 'cubic-bezier(0.34, 1.56, 0.64, 1)';
 export const EASE_SNAP = 'cubic-bezier(0.2, 0.9, 0.15, 1)';
@@ -328,6 +339,14 @@ class Hero implements HeroHand {
     this.origin = opts.origin ?? (() => ({ x: window.innerWidth / 2, y: window.innerHeight * 0.2 }));
     this.deck = h('div', { class: 'rhero__deck' });
     this.el = h('div', { class: 'rhero', 'aria-label': 'Your hand' }, this.deck);
+    // The stylesheet gives `.rhero` a transform transition, from the days when
+    // the park height moved once a session. It moves on every sizer tap now,
+    // and `board.ts` springs it frame by frame against the live hero-zone
+    // height — so a transition on top would only add its own duration as lag
+    // to a motion that is already eased, and the hand would crawl after the
+    // bar instead of riding it. Opacity keeps its transition; transform is
+    // handed to the frame loop.
+    this.el.style.transition = 'opacity var(--d-base) var(--ease-out)';
     for (let i = 0; i < MAX_HOLE; i++) {
       const card = new Card();
       const fly = h('span', { class: 'rhero__fly' }, card.el);

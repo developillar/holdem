@@ -33,6 +33,7 @@ import {
   createHeroHand,
   flyIn,
   motionMs,
+  reducedMotion,
   EASE_OUT,
   EASE_SPRING,
   type CardEl,
@@ -289,7 +290,8 @@ const MEASURE_MS = 240;
  */
 const HERO_CLEARANCE = 22;
 /**
- * Air between the bottom of the board row and the top of the pot readout.
+ * Air between the board row's box and the top of the pot readout — a floor,
+ * and one the row is held to rather than aimed at.
  *
  * This is the one clamp that actually binds on a portrait phone — the felt's
  * community band is shorter than the board plus the pot wants — so it is not
@@ -303,6 +305,11 @@ const HERO_CLEARANCE = 22;
  * the full sixteen there and the clamp pushes the row back *up* into the far
  * seats' chips — which is the collision this clearance exists to walk away
  * from, arrived at from the other side.
+ *
+ * Measured against the row's border box, which is what the clamp can actually
+ * bind: `.rboard` carries a `--rb-w * 0.1` inset of felt outside the cards, so
+ * the air between the printed card edge and the pot plate is that much more
+ * again — ~4.5 px at 393, ~3.9 px at 360.
  */
 const POT_CLEARANCE_MAX = 16;
 
@@ -311,6 +318,15 @@ function potClearance(vh: number): number {
 }
 /** Air the hand keeps above it, so it can never climb into the felt's HUD. */
 const HERO_HEADROOM = 72;
+/**
+ * Stiffness of the hand's parking spring, in rad/s, critically damped.
+ *
+ * 46 settles a full sizer's worth of travel — 140 px — inside ~250 ms, which
+ * is the beat the action bar itself collapses in, so the hand arrives with the
+ * bar rather than after it. Slower and the hand is still drifting when the
+ * player's eye is back on their cards; faster and there is nothing to see.
+ */
+const HERO_TRACK_W = 46;
 
 export interface CardLayer {
   readonly el: HTMLElement;
@@ -347,9 +363,18 @@ class Layer implements CardLayer {
 
   private measureAcc = 1e4;
   private topLimit = 124;
-  private bottomLimit = 520;
-  private heroGap = 152;
-  private gapCeil = 0;
+  /** half the pot plate's height — it is centred on its anchor */
+  private potHalf = 24;
+  private hasPot = false;
+  /** the rails `screens/table.ts` places the plate between, mirrored */
+  private potLo = 162;
+  private potHi = 600;
+  /** air to keep under the board row, for this viewport height */
+  private potGap = POT_CLEARANCE_MAX;
+  private vh = 0;
+  private heroGap = -1;
+  private heroTarget = 152;
+  private heroVel = 0;
   private lastVh = 0;
   private boardHalf = 38;
   private ruler: HTMLElement;
@@ -455,50 +480,135 @@ class Layer implements CardLayer {
     const safeT = px(rs.paddingTop);
     const safeB = px(rs.paddingBottom);
     const vh = window.innerHeight;
+    this.vh = vh;
     this.topLimit = safeT + 124;
-    this.boardHalf = (this.board.el.offsetHeight || 76) / 2;
+    // The rounded `offsetHeight` was worth up to half a pixel of the pot
+    // clearance below, which is a tenth of the number the clearance is arguing
+    // about. The fractional box is free here — it is the same layout pass.
+    this.boardHalf = (this.board.el.getBoundingClientRect().height || 76) / 2;
 
     // The pot readout owns the band just below the board; never sit on it.
+    //
+    // Both objects chase the same 3D scene every frame, but only the plate was
+    // doing it live: the row's floor came off a `getBoundingClientRect` taken
+    // on the 240 ms cadence, so it was aiming at where the plate had been up
+    // to a quarter second of camera drift ago. That is the whole gap between a
+    // clearance of 16 in the source and 13.55 on the glass. What is measured
+    // here now is only what does not move between frames — the plate's height,
+    // and the rails it is placed between — and `potFloor` puts it together
+    // with the live anchor in the same frame the row is placed.
     const pot = document.querySelector<HTMLElement>('.pot');
-    const potTop = pot ? pot.getBoundingClientRect().top : 0;
-    this.bottomLimit = potTop > 40 ? potTop - potClearance(vh) : vh * 0.52;
+    const potBox = pot ? pot.getBoundingClientRect() : null;
+    this.hasPot = !!potBox && potBox.height > 0;
+    if (potBox && potBox.height > 0) this.potHalf = potBox.height / 2;
+    this.potLo = safeT + 102;
+    this.potGap = potClearance(vh);
 
     // ── where the hand parks ───────────────────────────────────────
     //
     // The hero zone is the hand-strength strip plus the action bar, and it
     // changes height constantly: the strip is absent until you have a hand to
     // read, and the bar swaps between an idle row, a pre-action row and the
-    // live-turn layout with its sizing rail. Its top edge is therefore not a
-    // stable rail, and picking any single reading of it is picking one of the
-    // states to lose.
+    // live-turn layout with its sizing rail — which alone is 140 px, opened by
+    // the commonest tap on the screen.
     //
-    // So the hand parks above the *highest* the zone has ever reached and
-    // stays there. Parking above the lowest — which is what this did — puts
-    // the cards under the zone the moment it grows, and a poker app that
-    // slices the bottom off your own two cards has no argument left to make.
-    // Sitting a few pixels high in the idle state costs nothing: the felt
-    // above is empty. The ceiling resets when the viewport itself changes.
-    if (vh !== this.lastVh) {
-      this.lastVh = vh;
-      this.gapCeil = 0;
-    }
+    // So the hand tracks the zone's *current* top, always. It used to park
+    // above the tallest the zone had ever been, which trades one bug for a
+    // worse one: the cards leave the bar behind on the way back down and spend
+    // the rest of the session floating mid-felt, above their own nameplate,
+    // over nothing. Following the live reading is only safe because the two
+    // rails below make it safe — the hand can never be caught from underneath,
+    // and it only ever *glides* down.
     this.hero.measure();
     const zone = document.querySelector<HTMLElement>('.hero-zone');
     this.watchZone(zone);
     const zoneTop = zone ? zone.getBoundingClientRect().top : 0;
+    this.potHi = zoneTop > 0 ? zoneTop - 36 : vh - 220;
     const raw = zoneTop > 120 ? vh - zoneTop + HERO_CLEARANCE : safeB + 152;
     // Rails on the *reading*, never on the result. The floor keeps the hand
     // off the home indicator before the zone has laid itself out; the ceiling
     // stops a single freak measurement — a sheet animating up from the bottom
-    // edge, say — from parking the hand in the middle of the felt for the rest
-    // of the session. Once a reading is in, it is honoured in full.
+    // edge, say — from shoving the hand off the top of the felt.
     const painted = this.hero.paintedHeight || 116;
     const lo = safeB + 118;
     const hi = Math.max(lo, vh - painted - HERO_HEADROOM);
-    this.gapCeil = Math.max(this.gapCeil, clamp(raw, lo, hi));
-    this.heroGap = this.gapCeil;
+    this.heroTarget = clamp(raw, lo, hi);
+    // A rotation or a keyboard is not a move worth animating: arrive.
+    if (vh !== this.lastVh) {
+      this.lastVh = vh;
+      this.heroGap = this.heroTarget;
+      this.heroVel = 0;
+    }
+    // Rail one, and the reason the ratchet is not needed: the hand may lag the
+    // zone on the way *down* and never on the way up. A resize observer fires
+    // after layout and before paint, so raising it here lands in the same
+    // frame the zone grew in — the frame loop runs before layout and would be
+    // one frame late, which at the sizer's opening velocity is 60 px of the
+    // player's own cards behind the strip.
+    this.trackHero();
 
     this.remount();
+  }
+
+  /**
+   * The hand's floor: it is never below the zone's clearance line, whatever
+   * the spring is doing. Everything above that line is the spring's business.
+   */
+  private trackHero(): void {
+    if (this.heroGap >= this.heroTarget) return;
+    this.heroGap = this.heroTarget;
+    this.heroVel = 0;
+    this.hero.place(this.heroGap);
+  }
+
+  /**
+   * Eases the hand down toward a zone that has shrunk.
+   *
+   * Closed form rather than a stepped integration: a spring stepped with the
+   * frame's own dt is only stable while the frames are short, and the frames
+   * that matter here are the long ones — the first after a sizer opens, with a
+   * layout and a re-paint of the whole bar in them. This lands on the exact
+   * critically-damped curve for any dt at all, so a dropped frame costs the
+   * motion nothing and the settle time is the same on a slow phone.
+   */
+  private stepHero(dtMs: number): void {
+    const target = this.heroTarget;
+    if (this.heroGap < 0 || reducedMotion()) {
+      this.heroGap = target;
+      this.heroVel = 0;
+      return;
+    }
+    if (this.heroGap === target && this.heroVel === 0) return;
+    const dt = dtMs / 1000;
+    const decay = Math.exp(-HERO_TRACK_W * dt);
+    const a = this.heroGap - target;
+    const b = this.heroVel + HERO_TRACK_W * a;
+    this.heroGap = target + (a + b * dt) * decay;
+    this.heroVel = (b - HERO_TRACK_W * (a + b * dt)) * decay;
+    if (Math.abs(this.heroGap - target) < 0.05 && Math.abs(this.heroVel) < 0.5) {
+      this.heroGap = target;
+      this.heroVel = 0;
+    }
+  }
+
+  /**
+   * The line the board row's box may not cross: the top of the pot plate as it
+   * will be painted *this* frame, less the clearance.
+   *
+   * The plate is centred on its anchor by `screens/table.ts`, between two rails
+   * — off the far seats above, off the hero zone below. Those two lines are
+   * mirrored here rather than read back off the element, because reading the
+   * element gives you where it was last laid out and the whole point is to be
+   * in step with where it is going. It is a duplicated decision and it is
+   * flagged as one: if that placement changes, this follows it.
+   */
+  private potFloor(anchor: StageAnchorLike | undefined): number {
+    if (!this.hasPot) return this.vh * 0.52;
+    const y =
+      anchor && anchor.visible !== false && anchor.x > 0
+        ? clamp(anchor.y, this.potLo, this.potHi)
+        : Math.min(this.potHi - 10, this.vh * 0.42);
+    return y - this.potHalf - this.potGap;
   }
 
   /**
@@ -540,11 +650,13 @@ class Layer implements CardLayer {
       if (mid && mid.visible) cy = mid.y;
     }
     const lo = this.topLimit + this.boardHalf;
-    const hi = this.bottomLimit - this.boardHalf;
+    const hi = this.potFloor(a?.pot) - this.boardHalf;
     this.board.place(
       clamp(cx, w * 0.42, w * 0.58),
       hi > lo ? clamp(cy, lo, hi) : (lo + hi) / 2,
     );
+    this.stepHero(dtMs);
+    this.trackHero();
     this.hero.place(this.heroGap);
   }
 

@@ -243,9 +243,6 @@
   pointer-events: none;
 }
 
-.np.is-folded { opacity: 0.44; }
-.np.is-out { opacity: 0.62; }
-
 .np__card {
   position: relative;
   display: flex;
@@ -509,10 +506,14 @@
   color: var(--c-white);
 }
 
+/* The bb count is the second number on the plate, so it stays a rung below
+   the stack — but only one rung. On slate-400 it solved to 2.9 : 1 against
+   the card's own backing, which is under the floor for 9.5 px type and was
+   the reason "117bb" vanished the moment a chip sat behind a folded plate. */
 .np__bb {
   font: 600 9.5px/1 var(--f-num);
   font-variant-numeric: tabular-nums;
-  color: var(--c-slate-400);
+  color: var(--c-slate-300);
 }
 
 .np__state {
@@ -561,6 +562,45 @@
   border-color: var(--line-gold);
   box-shadow: var(--e-2), var(--e-gold), var(--inset-hi);
   background: linear-gradient(180deg, rgba(42, 38, 25, 0.92), rgba(14, 13, 11, 0.95));
+}
+
+/* ── Folded / sat-out treatment.
+ *
+ * These states used to fade the whole plate — `.np.is-folded { opacity: .44 }`
+ * — which took the card's own glass down with it. At 0.44 the backing solves
+ * to about 39 % effective alpha, which is not a scrim: measured over a live
+ * rack, the "$" of "$13.01" was covered outright by a red chip and "117bb"
+ * disappeared into a blue-and-white stack. A plate is text over a 3D scene,
+ * so its backing is load-bearing and is the one layer that may never fade.
+ *
+ * So the state is expressed the way it should have been: the surface goes
+ * *more* opaque and loses its lift, the portrait drops back, and the name
+ * steps down a rung on the neutral ramp while the money stays near the top
+ * of it. A folded seat still reads as folded in 400 ms, and every glyph on
+ * it stays readable over whatever the felt is doing underneath. */
+.np.is-folded .np__card,
+.np.is-out .np__card {
+  background: linear-gradient(180deg, rgba(20, 25, 37, 0.97), rgba(7, 9, 15, 0.985));
+  border-color: var(--line-1);
+  box-shadow: var(--e-1), var(--inset-lo);
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+}
+
+.np.is-folded .np__avwrap { opacity: 0.4; }
+.np.is-out .np__avwrap { opacity: 0.52; }
+
+.np.is-folded .np__name,
+.np.is-out .np__name { color: var(--c-slate-300); }
+.np.is-folded .np__stack,
+.np.is-out .np__stack { color: var(--c-slate-200); }
+.np.is-folded .np__btn,
+.np.is-out .np__btn { filter: saturate(0.5) brightness(0.78); }
+
+.np__avwrap,
+.np__name,
+.np__stack {
+  transition: opacity var(--d-base) var(--ease-out), color var(--d-base) var(--ease-out);
 }
 
 .np.is-allin .np__card {
@@ -1601,10 +1641,14 @@
   touch-action: none;
 }
 
+/* Inset by half a thumb at each end, exactly like the fill and the ticks: the
+   groove is the road the thumb's *centre* travels, so anything outside that
+   span is track the fill can never reach — at all-in it read as a detached
+   dark pill hanging off the left cap of a bar that was otherwise 100% full. */
 .ab__groove {
   position: absolute;
-  left: 0;
-  right: 0;
+  left: 15px;
+  right: 15px;
   top: 50%;
   height: 8px;
   margin-top: -4px;

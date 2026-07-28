@@ -64,6 +64,8 @@ const CARD_LIFT = 0.0035;
 const CHIP_LIFT = 0.002;
 /** A chip's own radius plus a hair: how close to the cloth's edge one may sit. */
 const CHIP_EDGE = 0.07;
+/** A card corner stops just short of the trim bead, never on it. */
+const CARD_EDGE = 0.006;
 
 /** Betting line: inside every seat's chips, outside the community band. */
 const BET_RX = 0.6;
@@ -81,24 +83,83 @@ const FLOOR_Y = -0.88;
 const SEG_U = 192;
 
 /**
- * How far along the seat's radius its hole cards sit. Opponents ride close
- * to the rail so the middle of the felt stays empty; the hero comes further
- * in because those two cards are the most important object on the screen.
+ * How far along the seat's radius its hole cards sit, and how far around the
+ * ring they are allowed to slide.
  *
- * 0.865 was not close enough. The two far seats sit at |sin θ| ≈ 0.57, so
- * only a little over half their radius is depth, and their face-down slabs
- * projected to within nine pixels of the community row's top edge — measured
- * at 393 × 852, the slab's lower edge landed at y 277 with the row's band
- * starting at 270. A card overlapping the flop is the same defect as a
- * nameplate overlapping it, and the row is the thing the felt is *for*.
+ * A card is 0.21 × 0.292 on a 0.8 × 1.5 cloth, so its own half-diagonal is
+ * 0.18 m: a *centre* at 0.93 of the felt radius puts the outer corner well
+ * past the trim bead. That is exactly what happened when the radius was
+ * pushed to 0.9 + 0.07 · sideBias to buy clearance over the community row —
+ * measured, the outer corner of the 145°/215°/325°/35° hands solved to
+ * (x/0.8)² + (z/1.5)² = 1.305, a fifth of a card hanging off the table.
  *
- * `SIDE_PULL` is the extra push the seats out on the long sides get, where
- * the radius buys the least depth: `1 − |sin θ|` is zero at the ends of the
- * oval and largest at its widest point, which is exactly where the leak was.
+ * The radius therefore comes back inside the cloth (worst corner 0.974), and
+ * the clearance the push was buying is bought a different way: the *far* side
+ * seats slide around the ring toward the far end of the oval instead of
+ * outward along their own radius. The long axis is where the cloth has room —
+ * |z| can reach 1.5 where |x| stops at 0.8 — and on screen that arc is
+ * straight up, away from the community row, which is the direction that was
+ * wanted in the first place. Measured against the shipped board band, the far
+ * pair's clearance goes from 11 px to 25 px while every corner comes back
+ * onto the felt.
+ *
+ * The near side seats need no arc at all: they clear the row by 58 px, and
+ * sliding them would only crowd the hero.
  */
 const HERO_CARD_R = 0.795;
-const OPP_CARD_R = 0.9;
-const OPP_CARD_SIDE_PULL = 0.07;
+const OPP_CARD_R = 0.862;
+/**
+ * How much of the radius the side seats give back. `1 − |sin θ|` is zero at
+ * the ends of the oval and largest at its widest point, which is where the
+ * ellipse curves away from a card corner fastest.
+ */
+const OPP_CARD_SIDE_TUCK = 0.216;
+/** Peak arc a far side seat's hand slides toward the far end, in radians. */
+const OPP_CARD_FAR_ARC = (47 * Math.PI) / 180;
+
+/**
+ * Where a seat's chip rack rests, in the same polar terms as the cards.
+ *
+ * A rack does NOT belong beside the hole cards. The nameplates are DOM chips
+ * pinned to the rail crest, roughly 130 × 48 CSS px each, and a plate that
+ * size hangs 30–45 px *inward* over the cloth — so the whole annulus a rack
+ * used to sit in is, on screen, underneath a nameplate. Throwing the rack
+ * "railward" (which is what the previous pass did) walked it straight into
+ * the plate: measured, 12 chip instances projected inside a nameplate rect at
+ * 393 × 852 and 29 at 360 × 640, and money over a chip stack is the rubric's
+ * scrim failure.
+ *
+ * So racks are placed by the *free* felt instead. Projecting the shipped
+ * layout at 393/360/430 over 14 hand states, the cloth has exactly two bands
+ * the plate ring never reaches: one just inside the far plates and above the
+ * community row, one just below the row and above the near plates. Every
+ * rack lands in one of them:
+ *
+ *   • radius `RACK_R_END + RACK_R_SIDE · |cos θ|` — deep for the seats at the
+ *     ends of the oval, where the camera compresses everything, wider for the
+ *     seats on the long sides, where it does not.
+ *   • an arc around the ring toward the far end of the table, scaled by
+ *     |cos θ| so the two pole seats keep their own axis (and so the sign of
+ *     `cos θ`, which is a float epsilon there, can never flip a rack across
+ *     the table). The near seats swing 24°, the far seats 9°.
+ *
+ * Worst-case clearance between any chip in any rack and any nameplate rect,
+ * over those 42 measured frames: 4 px. It was −25 px (i.e. 25 px inside).
+ */
+const RACK_R_END = 0.43;
+const RACK_R_SIDE = 0.25;
+const RACK_ARC_BASE = (20 * Math.PI) / 180;
+const RACK_ARC_DEPTH = (16 * Math.PI) / 180;
+/**
+ * The hero owns the near end outright, and the hero's own plate, hand and
+ * action bar are all stacked in it, so the hero's rack is placed by hand: out
+ * to the rail on the right, in the gap between the hero's plate and the
+ * near-right seat's.
+ */
+const HERO_RACK_R = 0.84;
+const HERO_RACK_ARC = (-28 * Math.PI) / 180;
+/** The button rides the rack's ray, one rack-and-a-bit out toward its owner. */
+const BUTTON_OUT = 0.18;
 
 /**
  * Nameplate anchor ring, as a fraction of the rail centre-line. The widest
@@ -212,6 +273,39 @@ function ontoFelt(p: THREE.Vector3, margin: number): THREE.Vector3 {
 }
 
 /**
+ * Largest scale ≤ 1 along a hole-card row's own ray that puts every corner of
+ * every card on the cloth.
+ *
+ * The radius formula above is tuned for the six-max ring; the seven-, eight-
+ * and nine-handed rings put seats at 126°–128°, where `1 − |sin θ|` is small
+ * enough that the tuck barely fires and the outer corner solved to 1.05. This
+ * is the backstop that makes "no card leaves the felt" a property of the
+ * module rather than of one hand-tuned constant: a corner is inside when
+ * (s·o + d)ᵀ E (s·o + d) ≤ 1, which is a quadratic in s, so the answer is
+ * exact and costs one square root per corner at layout time.
+ */
+function fitCardRow(ox: number, oz: number, tx: number, tz: number, spread: number): number {
+  const rx = FELT_RX - CARD_EDGE;
+  const rz = FELT_RZ - CARD_EDGE;
+  const a = (ox * ox) / (rx * rx) + (oz * oz) / (rz * rz);
+  if (a <= 1e-9) return 1;
+  let s = 1;
+  for (let i = 0; i < CARD_OFFSETS.length; i++) {
+    for (let c = 0; c < 4; c++) {
+      const dx = tx * CARD_OFFSETS[i] * spread + (c & 1 ? CARD_W : -CARD_W) / 2;
+      const dz = tz * CARD_OFFSETS[i] * spread + (c & 2 ? CARD_H : -CARD_H) / 2;
+      const b = 2 * ((ox * dx) / (rx * rx) + (oz * dz) / (rz * rz));
+      const k = (dx * dx) / (rx * rx) + (dz * dz) / (rz * rz) - 1;
+      const disc = b * b - 4 * a * k;
+      if (disc <= 0) continue;
+      const root = (-b + Math.sqrt(disc)) / (2 * a);
+      if (root < s) s = root > 0 ? root : 0;
+    }
+  }
+  return s;
+}
+
+/**
  * Tangential offsets for the four hole-card slots, in units of `spread`.
  * Slots 0 and 1 straddle the centre so a two-card hand is symmetric about
  * the seat axis; 2 and 3 extend the row outward for PLO. Ordering the row
@@ -231,12 +325,21 @@ function buildSeats(size: number): SeatAnchors[] {
     const tangent = new THREE.Vector3(-inward.z, 0, inward.x);
     const hero = slot === 0;
 
-    // Seats out on the long sides are the ones whose cards would drift into
-    // the community band, so they get pushed hardest into the rail.
+    // Seats out on the long sides are the ones the ellipse pinches hardest,
+    // so they give back the most radius; the far ones take it back as arc.
     const sideBias = 1 - Math.abs(sin);
-    const cardR = hero ? HERO_CARD_R : OPP_CARD_R + OPP_CARD_SIDE_PULL * sideBias;
+    // `-sign(cos)` runs around the ring toward the far end of the oval. At the
+    // two pole seats cos is a float epsilon, but there sideBias is 0 and the
+    // arc collapses with it, so the unstable sign never reaches the result.
+    const farward = -Math.sign(cos) || 1;
+    const cardR = hero ? HERO_CARD_R : OPP_CARD_R - OPP_CARD_SIDE_TUCK * sideBias;
+    const cardArc = hero || sin >= 0 ? 0 : OPP_CARD_FAR_ARC * sideBias * farward;
+    const cardA = a + cardArc;
     const spread = hero ? 0.068 : 0.054;
-    const cardOrigin = new THREE.Vector3(edge.x * cardR, FELT_Y + CARD_LIFT, edge.z * cardR);
+    const rawX = FELT_RX * Math.cos(cardA) * cardR;
+    const rawZ = FELT_RZ * Math.sin(cardA) * cardR;
+    const fit = fitCardRow(rawX, rawZ, tangent.x, tangent.z, spread);
+    const cardOrigin = new THREE.Vector3(rawX * fit, FELT_Y + CARD_LIFT, rawZ * fit);
     const cards: THREE.Vector3[] = [];
     for (let i = 0; i < 4; i++) {
       const t = CARD_OFFSETS[i] * spread;
@@ -251,30 +354,14 @@ function buildSeats(size: number): SeatAnchors[] {
 
     // ── which way the felt furniture is nudged off the seat axis ──────
     //
-    // Every chip on this table is placed as `radius × edge + k × tangent`,
-    // and `tangent` has one fixed handedness all the way round the ring. So
-    // an offset written as a bare `+tangent` points *toward the camera* on
-    // the left-hand seats and *away from it* on the right-hand ones: two
-    // mirror-image seats come out mirrored in x and identical in z. The ring
-    // is symmetric; what sits on it was not.
-    //
-    // Measured at 393 × 852, that is why the far-right seat's chip stack
-    // projected on to the top of the community row while the far-left seat's
-    // sat 30 px clear of it, why the near-right seat's stack landed under its
-    // own nameplate, and why the far-left seat's bet came down to y 288 with
-    // the row's ink starting at 289 — chips on the flop. Signing each nudge
-    // by the tangent's own z makes the four side seats true mirrors, and lets
-    // each piece of furniture pick the direction that keeps it out of the
-    // middle of the felt.
-    //
-    // `railward` throws toward the far rail, which is where a stack and a
-    // button want to be — clear of the community row at the far seats and
-    // clear of the nameplate at the near ones. The two end seats have a
-    // purely lateral tangent, no z to sign, and keep the handedness they had.
-    const railward = tangent.z < 0 ? 1 : -1;
-    // A bet goes the other way: out toward its *own* end of the oval, which
-    // is the only direction that is away from the board for near and far
-    // seats alike.
+    // `tangent` has one fixed handedness all the way round the ring, so an
+    // offset written as a bare `+tangent` points *toward the camera* on the
+    // left-hand seats and *away from it* on the right-hand ones: two mirror
+    // seats come out mirrored in x and identical in z. The ring is symmetric;
+    // what sits on it was not. Signing the bet's nudge by the tangent's own z
+    // makes the four side seats true mirrors and sends every bet out toward
+    // its *own* end of the oval, which is the only direction that is away
+    // from the board for near and far seats alike.
     const betward = Math.sign(sin * tangent.z) || 1;
 
     // Street bets land on the printed line — outside it is the player's side
@@ -285,24 +372,30 @@ function buildSeats(size: number): SeatAnchors[] {
     betPoint.z += tangent.z * 0.11 * betward;
     betPoint.y = FELT_Y + CHIP_LIFT;
 
+    // The rack: polar, off the seat's own ray, into whichever of the two
+    // plate-free bands this seat's arc lands in. See RACK_R_END above.
+    const rackR = hero ? HERO_RACK_R : RACK_R_END + RACK_R_SIDE * Math.abs(cos);
+    const rackArc = hero
+      ? HERO_RACK_ARC
+      : Math.abs(cos) * (RACK_ARC_BASE + RACK_ARC_DEPTH * sin) * farward;
+    const rackA = a + rackArc;
     const stack = ontoFelt(
       new THREE.Vector3(
-        edge.x * (cardR - 0.04) + tangent.x * 0.235 * railward,
+        FELT_RX * Math.cos(rackA) * rackR,
         FELT_Y + CHIP_LIFT,
-        edge.z * (cardR - 0.04) + tangent.z * 0.235 * railward,
+        FELT_RZ * Math.sin(rackA) * rackR,
       ),
       CHIP_EDGE,
     );
-    // The button rides the same side as the stack — the only side of a side
-    // seat that is not the middle of the table — and is set 0.15 m further
-    // down the radius so the two never share a footprint.
+    // The button rides the rack's own ray, a rack-and-a-bit further out, so
+    // it reads as belonging to that seat without ever sharing the footprint.
     const button = ontoFelt(
       new THREE.Vector3(
-        edge.x * (cardR - 0.19) + tangent.x * 0.205 * railward,
+        FELT_RX * Math.cos(rackA) * (rackR + BUTTON_OUT),
         FELT_Y + 0.004,
-        edge.z * (cardR - 0.19) + tangent.z * 0.205 * railward,
+        FELT_RZ * Math.sin(rackA) * (rackR + BUTTON_OUT),
       ),
-      CHIP_EDGE,
+      0.05,
     );
 
     return {

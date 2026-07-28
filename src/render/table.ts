@@ -71,6 +71,10 @@ const CARD_EDGE = 0.006;
 const BET_RX = 0.6;
 const BET_RZ = 1.06;
 
+/** Where the pot pile rests — near side of the community row, dead centre. */
+const POT_X = 0;
+const POT_Z = 0.34;
+
 /** Community row. Five cards, centred, filling 70 % of the felt's width. */
 const BOARD_PITCH = 0.226;
 const BOARD_Z = -0.1;
@@ -158,6 +162,20 @@ const RACK_ARC_DEPTH = (16 * Math.PI) / 180;
  */
 const HERO_RACK_R = 0.84;
 const HERO_RACK_ARC = (-28 * Math.PI) / 180;
+/**
+ * Street bets on the near arc.
+ *
+ * On the far arc the printed betting line is clear of everything, and a bet
+ * lands on it exactly as it should. On the near arc that same line runs
+ * *under* the plate ring: measured over 42 projected frames, a near seat's
+ * bet sat 24 px inside its own nameplate and the hero's 22 px inside his. So
+ * a near bet is set in from the rack toward the pot instead — which is where
+ * a pushed bet belongs anyway — and the hero's takes the mirror of the hero's
+ * own rack, the one other pocket the near end has.
+ */
+const NEAR_BET_PUSH = 0.22;
+const HERO_BET_R = 0.93;
+const HERO_BET_ARC = (40 * Math.PI) / 180;
 /** The button rides the rack's ray, one rack-and-a-bit out toward its owner. */
 const BUTTON_OUT = 0.18;
 
@@ -364,14 +382,6 @@ function buildSeats(size: number): SeatAnchors[] {
     // from the board for near and far seats alike.
     const betward = Math.sign(sin * tangent.z) || 1;
 
-    // Street bets land on the printed line — outside it is the player's side
-    // of the cloth, inside it belongs to the pot — nudged off the seat axis
-    // so a bet never buries that seat's own hole cards.
-    const betPoint = ellipse(BET_RX, BET_RZ, a, FELT_Y + CHIP_LIFT);
-    betPoint.x += tangent.x * 0.11 * betward;
-    betPoint.z += tangent.z * 0.11 * betward;
-    betPoint.y = FELT_Y + CHIP_LIFT;
-
     // The rack: polar, off the seat's own ray, into whichever of the two
     // plate-free bands this seat's arc lands in. See RACK_R_END above.
     const rackR = hero ? HERO_RACK_R : RACK_R_END + RACK_R_SIDE * Math.abs(cos);
@@ -387,6 +397,28 @@ function buildSeats(size: number): SeatAnchors[] {
       ),
       CHIP_EDGE,
     );
+
+    // Street bets. On the far arc they land on the printed line — outside it
+    // is the player's side of the cloth, inside it belongs to the pot —
+    // nudged off the seat axis so a bet never buries that seat's own hole
+    // cards. On the near arc the line is under the plate ring, so the bet is
+    // set in from the rack toward the pot instead. See NEAR_BET_PUSH.
+    const betPoint = ellipse(BET_RX, BET_RZ, a, FELT_Y + CHIP_LIFT);
+    betPoint.x += tangent.x * 0.11 * betward;
+    betPoint.z += tangent.z * 0.11 * betward;
+    if (hero) {
+      const ba = a + HERO_BET_ARC;
+      betPoint.x = FELT_RX * Math.cos(ba) * HERO_BET_R;
+      betPoint.z = FELT_RZ * Math.sin(ba) * HERO_BET_R;
+    } else if (sin > 0) {
+      const dx = POT_X - stack.x;
+      const dz = POT_Z - stack.z;
+      const len = Math.hypot(dx, dz) || 1;
+      betPoint.x = stack.x + (dx / len) * NEAR_BET_PUSH;
+      betPoint.z = stack.z + (dz / len) * NEAR_BET_PUSH;
+    }
+    betPoint.y = FELT_Y + CHIP_LIFT;
+    ontoFelt(betPoint, CHIP_EDGE);
     // The button rides the rack's own ray, a rack-and-a-bit further out, so
     // it reads as belonging to that seat without ever sharing the footprint.
     const button = ontoFelt(
@@ -461,7 +493,7 @@ export const layout = {
   SEAT_POSITIONS,
   SEAT_ANGLES_DEG,
   BOARD_SLOTS,
-  POT_CENTER: new THREE.Vector3(0, FELT_Y + CHIP_LIFT, 0.34),
+  POT_CENTER: new THREE.Vector3(POT_X, FELT_Y + CHIP_LIFT, POT_Z),
   /** deal origin — the dealer's chute at the far end of the felt */
   DEALER_POS: new THREE.Vector3(0, FELT_Y + 0.03, -(FELT_RZ - 0.11)),
   /** folded cards fly here and fade */

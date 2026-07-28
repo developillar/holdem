@@ -248,10 +248,13 @@
   display: flex;
   align-items: center;
   gap: 6px;
-  min-width: 92px;
-  max-width: 152px;
+  min-width: 90px;
+  max-width: 148px;
   min-height: var(--hit);
-  padding: 5px 10px 5px 5px;
+  /* 34px portrait + 8px padding + 2px border = exactly --hit. Four pixels of
+     plate is four pixels of felt the chip racks and the community row get
+     back, on every seat, at every viewport — and the target is still 44. */
+  padding: 4px 10px 4px 4px;
   border-radius: var(--r-pill);
   background: linear-gradient(180deg, rgba(26, 32, 47, 0.88), rgba(8, 11, 18, 0.94));
   border: 1px solid var(--line-2);
@@ -285,8 +288,8 @@
 
 .np__avwrap {
   position: relative;
-  width: 36px;
-  height: 36px;
+  width: 34px;
+  height: 34px;
   flex: none;
 }
 
@@ -450,7 +453,7 @@
 /* Timer ring — only ever one on the table at a time. */
 .np__ring {
   position: absolute;
-  inset: -4px;
+  inset: -5px;
   width: 44px;
   height: 44px;
   color: var(--c-good);

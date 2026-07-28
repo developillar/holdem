@@ -1,0 +1,1 @@
+import{h as i,c as d}from"./shell-CPeMyKsr.js";function n(e={}){const a=(r,s)=>r===void 0?s:typeof r=="number"?`${r}px`:r;return i("span",{class:d("r-skel",e.class),"aria-hidden":"true",style:{width:a(e.w,"100%"),height:a(e.h,"12px"),borderRadius:a(e.r,"6px"),"--skel-delay":`${e.delay??0}ms`}})}export{n as S};

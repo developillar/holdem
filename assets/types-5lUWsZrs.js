@@ -1,0 +1,1 @@
+const a=["c","d","h","s"],r=["2","3","4","5","6","7","8","9","T","J","Q","K","A"];function t(n){return(n>>2)+2}function c(n){return n&3}function s(n){return r[n>>2]+a[n&3]}export{r as R,c as a,s as b,t as c};
